@@ -1,0 +1,18 @@
+# Forward walking with heading hold. THE VALIDATED CONFIG: this is the recipe that produced
+# the shipped policy (deploy/policy/bittle_policy_best_0944.npz, score 0.944), reproduced
+# from docs/training.md. Change it only with a measurement in hand.
+#
+#   uv run python sim/mj_train.py --config configs/walk.yaml -e pool-s0 --seed 0
+#
+# Four seeds, not one. Eight seeds of this exact config score anywhere from 0.07 to 0.94 --
+# same command, same data, only --seed differs. One run is a lottery ticket.
+
+extends: base.yaml
+
+description: Forward walking at 0.1 m/s with heading hold. Validated; scored 0.944.
+
+command_vx: [0.1]
+heading: true
+ang_vel_range: [-0.6, 0.6]
+tracking_sigma: 0.0036
+tracking_sigma_ang: 0.36

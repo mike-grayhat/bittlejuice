@@ -1,0 +1,46 @@
+# Everything the recipe in docs/training.md holds constant regardless of what you are
+# training the robot to DO. Objectives extend this and override only the command
+# distribution and the reward terms that shape it.
+#
+# Nothing here is arbitrary; each value is a measurement or a decision recorded elsewhere.
+# `uv run python sim/mj_train.py --help` carries the reasoning for every flag, at length.
+#
+# Keys are argparse destinations: the flag without '--', hyphens as underscores.
+
+description: >
+  Shared architecture, regularisation and terrain for Bittle MuJoCo training.
+  Extended by an objective; not meant to be trained directly.
+
+# --- scale -------------------------------------------------------------------------
+num_envs: 512
+# 5000, NOT more. Deployment quality peaks here and then collapses while reward keeps
+# improving: 0.944 -> 0.854 -> 0.644 -> 0.065 out to 20000, with reward at its MAXIMUM at
+# 10000 and every training curve looking healthy the whole way. Nothing in tensorboard
+# tells you this is happening. See docs/training.md.
+max_iterations: 5000
+
+# --- partial observability ----------------------------------------------------------
+# The actor sees only 6 real measurements; its joint channels are its own commands played
+# back through a servo model. These attack that from different sides.
+privileged_critic: true      # critic only, discarded after training -- free value accuracy
+estimator: true              # 3-wide base-velocity estimate, appended to the actor's input
+obs_history: 12              # a footfall is an IMU transient; one frame cannot difference
+
+# --- closed-loop pressure ------------------------------------------------------------
+# Policies were measured ~99% open-loop, ignoring the IMU entirely. These remove the
+# reasons the environment let them get away with it, and are meant to be used together.
+terrain: true
+terrain_amplitude: 0.012     # metres. ~13% of the 94 mm stand height -- scaled to a Bittle
+terrain_correlation: 0.05
+penalty_curriculum: true
+lipschitz_coef: 0.0005
+
+# --- what the hardware can actually do ----------------------------------------------
+# Penalties on how fast the policy may change its mind. The servo is the binding limit,
+# not the control loop, and a policy that ignores this looks fine in sim and shakes on
+# the robot.
+reward_scale:
+  action_jerk: -0.03
+  action_slew: -0.008
+  feet_slip: -0.005
+  feet_stuck: -0.15

@@ -1,0 +1,504 @@
+<mujoco model="bittle">
+  <!-- ============================================================
+       Cleaned, unified Bittle MJCF for RL use (Genesis or MuJoCo)
+       Based on:
+         - bittle_scaled.xml  (geometry / dynamics, correctly scaled)
+         - bittle_task.xml    (actuators, sensors, keyframe)
+       Removed:
+         - <include "../common.xml">  (external dependency)
+         - MJPC <custom> blocks       (planner-specific)
+         - Mocap goal body            (MJPC-specific)
+         - Terrain props (ramp, hill, box)  (not needed for RL)
+         - <user> sensors             (MJPC cost terms only)
+       Fixed:
+         - Servo torque limit:  0.55 -> 0.18 N*m  (matches real Petoi P1S/P2S)
+         - Position controller: added kp=20, kv=0.5  (was implicit kp=1)
+         - Actuator ctrlrange:  matches actual joint ranges per joint
+         - Mesh path:           meshdir="assets" + plain filenames (was double-prefixed)
+         - Added a ground plane (so the robot has somewhere to land)
+         - Added an accelerometer sensor for full IMU
+         - Collision set: the four foot spheres are the only colliding
+           geoms; every mesh geom is rendering-only. See the <default> block below
+           for what this replaced and why. This removes the mesh-vs-mesh narrowphase
+           that used to make MJX take 30+ minutes to JIT-compile one rollout, so the
+           "replace each collision mesh with a box in a derived XML" workaround an
+           earlier revision used is no longer needed - there is nothing left to box.
+         - Foot sphere position: at the actual toe, the far end of
+           each shin along the knee link's local x. Previously the spheres never made
+           contact at all and the knee mesh took every one. See the footL/footR block
+           for the axis mistake this went through first.
+         - Left/right symmetry: the right legs are exact mirrors of
+           the left. They were not before, and had not been since bittle_scaled.xml:
+           the right toes stood 11mm wider and 2mm shorter at identical joint angles,
+           because neither the placement transforms nor the meshes were mirrored
+           (right knee body carried a z=+0.003996 the left lacked; left_knee.002 has
+           690 verts against right_knee.002's 686, with a 2.3mm bounding-box
+           difference along the shin). That is CAD-export residue, not design:
+           github.com/ger01d/opencat-gym models/bittle_esp32.urdf, an independent model of the same
+           robot, is exactly mirrored on round numbers (shoulders at +-0.05, knees at
+           +-0.015/-0.045). An asymmetric model teaches an asymmetric gait.
+
+           Each right body/geom/inertial transform is now the left one reflected
+           through x=0 as (p, R) -> (M p, M R M) with M = diag(-1,1,1), and the right
+           meshes are the left OBJs mirrored in their own frame (*.mirror.obj, faces
+           rewound so normals stay outward). Joint axes stay "0 0 -1": the reflection
+           reverses rotation sense, so a negated axis keeps +0.56 rad meaning the same
+           stand pose on both sides. Verified: L/R toe mismatch is 0 um across 400
+           mirrored joint poses (was 11000 um), inertias mirror exactly, and the
+           settled stance loads all four feet instead of three.
+       ============================================================ -->
+
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <option timestep="0.005" cone="elliptic" gravity="0 0 -9.81"/>
+
+  <default>
+    <!-- frictionloss must stay small relative to the 0.18 N*m actuator forcerange below: it is
+         Coulomb friction the motor has to overcome before the joint moves at all, so a value at
+         or above the torque limit locks the joint outright. Was 0.1 (56% of stall torque, and
+         domain randomization's U(0.5,2.0) scaling pushed it to 0.2 > 0.18, locking joints in
+         ~68% of randomized robots). 0.03 is ~17% of stall torque, in line with typical micro
+         servo gearbox stiction, and stays at 8-33% of torque across the full randomized range. -->
+    <joint limited="true" damping="0.01" armature="0.007" frictionloss="0.03"/>
+    <!-- Position-actuator defaults: stiffer than original (kp=1 was too soft),
+         force-limited to realistic micro-servo torque (0.18 N*m ~ 1.8 kg*cm).
+
+         kv 0.35 and joint armature 0.007: the actuator here must
+         be a fast-but-not-weightless tracker, because the servo's response is modelled
+         SEPARATELY by mj_vec_env._apply_actuator_dynamics, which shapes ctrl before it
+         reaches this actuator. The pair is what the policy experiences, so the pair is what
+         gets fitted -- against the STEP measurement, which is the thing being reproduced:
+         measurements/reference/step_summary.csv joint 8 reads dead time 22.0 ms + tau 84.1 ms
+         (t63 ~106 ms) and 165.9 deg/s on the large step. Composed here: t63 120 ms, no
+         overshoot, slew 151 deg/s.
+
+         Two failed settings are worth recording, because they bracket this one.
+         kv=0.5/armature=0.01 (the original) composes to t63 140 ms -- ~30% slow against the
+         step measurement. kv=0.1/armature=0.0002 was an attempt to hit t63 40 ms, a target
+         taken from the bodyid tau of 33 ms; but bodyid is a frequency response measured with
+         the servo continuously driven and its own docstring warns against using it for
+         absolute gains, so that fitted a step response to the wrong one of two disagreeing
+         methods (SIM2REAL_NOTES: "where two methods disagreed, we covered both"). It also
+         made the joints ~6x lighter than the physical links, and they rang on every footfall:
+         with one fixed policy, the >5 Hz share of true dof_vel while walking went 2% (0.01)
+         -> 78% (0.0002) -> 4% (0.007), with forward speed +0.100 -> +0.056 -> +0.097 m/s.
+         A suspended-leg step fit cannot see that, which is why the walking spectrum is now
+         part of how this pair is chosen.
+
+         kp and forcerange are untouched: kp sets tracking stiffness under load and forcerange
+         is the believed stall torque, both load-path properties the filter does not model.
+    -->
+    <position kp="20" kv="0.35" gear="1" forcelimited="true" forcerange="-0.18 0.18"/>
+    <equality solref="0.01 1.1"/>
+    <!-- Nothing collides by default. Every mesh geom in this file is rendering-only: each link
+         carries TWO coincident copies of its mesh (a named "*_c" one and an unnamed rgba one),
+         and the only intended contact surface is the four foot spheres, which opt back in via
+         class="footL"/"footR" below.
+
+         BEWARE the pairing here. Written as contype=1/conaffinity=2, every "*_c"
+         geom additionally overrode its own class="visualgeom" with an inline
+         contype=1/conaffinity=15 - so BOTH mesh copies on every link collided, the exact
+         opposite of what the surrounding comments claimed. Compiled, that produced 164 candidate
+         collision pairs, 108 of them mesh-vs-mesh self-collision (including 4 pairs between two
+         21,714-vertex convex hulls), and 8 floor contacts at the "home" keyframe where there
+         should be 4 - each link touching the floor twice through its own duplicate, doubling
+         effective contact stiffness. That is what made a single MJX training rollout take 30+
+         minutes to JIT-compile, and what forced the Genesis env's max_collision_pairs=100.
+         With this default the model compiles to 4 candidate pairs (foot sphere vs floor).
+
+         Consequence to be aware of: the body and legs can now pass through the floor if the
+         robot tips far enough. The env terminates at 10 deg of roll/pitch, long before any part
+         other than a foot could reach the ground, so this never arises during training. -->
+    <geom contype="0" conaffinity="0"/>
+    <default class="visualgeom">
+      <geom material="visualgeom" contype="0" conaffinity="0" friction="0.9 0.02 0.01"/>
+    </default>
+    <!-- The four foot spheres are the ONLY colliding geoms in this file (contype=1/conaffinity=2
+         against the floor's contype=2/conaffinity=1; the Genesis env's separately-added
+         gs.morphs.Plane uses the same pair).
+
+         pos is set PER GEOM below, not here: the four toes are at genuinely different points
+         (the sides are mirrored OBJs, and front/back differ by ~0.2mm).
+
+         How the toe is located, and the trap to avoid: the knee link's long axis is its local
+         **x**, not z. In the knee-link frame the mesh spans x [-0.0548, +0.0108] (65.6mm, the
+         shin), y 16mm, z 27.4mm, and world-"up" at the stand pose is [0.900, 0.436, 0]. So the
+         toe is the far end of the shin at x = -0.0548 (left) / +0.0544 (right) - NOT the mesh's
+         minimum z. Each sphere centre is that toe vertex offset by one radius along world-up,
+         which puts its surface exactly on the tip.
+
+         History, all three attempts wrong on the same axis:
+           - original z=-0.0825: left over from an unscaled coordinate system.
+           - rescaling it 0.1x to z=-0.00825 lands inside the mesh's z-range, but the
+             spheres still never touched the ground, so this class's priority/condim=6/friction
+             tuning was dead code and mjx_env.py's foot-height contact test could never fire.
+           - z=-0.0208, derived from the mesh's minimum z *in the link
+             frame*, which is meaningless because the link is rotated at the stand pose. That put
+             the contact point ~4cm UP THE SHIN, so the knee meshes hung 4.1cm below the floor and
+             the robot visibly walked on its knees. It also dragged the stand height down to
+             0.0533. Corrected here.
+
+         Note this means the pre-fix model was contacting the ground at roughly the right place:
+         the knee mesh's tip IS the toe. What was actually wrong was that the *sphere* took no
+         part in it, that both mesh copies collided (doubling every contact), and that the mesh
+         collision brought 108 mesh-vs-mesh self-collision pairs with it. Those are what this
+         file's collision rework fixes; the stand height (~0.094) barely moves.
+
+         `size` (5mm radius) is deliberately NOT rescaled; it is already a plausible real toe-pad
+         size at this scale.
+
+         solimp is MuJoCo's default 0.9 0.95 0.001, not the exporter's 0.015 1 0.031: another
+         constant borrowed from a much larger quadruped, in the same family as the frictionloss
+         and push-magnitude bugs noted elsewhere in this repo. d0=0.015 means near-zero constraint
+         impedance at first touch, ramping to full only over 31mm of penetration - fine for a
+         30kg machine, absurd for a 0.257kg robot pressing 0.63N per foot. It went unnoticed
+         because the knee mesh (MuJoCo-default, stiff solimp) took every contact while the foot
+         spheres never touched anything at all; the moment the feet engaged, the robot sank >12mm
+         into the floor. With the default it settles ~0.3mm in, at z=0.09382 against a geometric
+         0.09436.
+
+         friction[0], measured at 0.25 rather than the exporter's 0.80: the last constant with nothing
+         behind it, and it was 3-5x too high. Inclined-plane test, the robot reading its own
+         incline off its accelerometer (bittle_io/experiments/friction.py, traces in
+         measurements/reference):
+
+             smooth plastic   slip at  8.8 deg  ->  mu_s 0.156   (5 trials, 0.142-0.182)
+             fabric mat       slip at 23.8 deg  ->  mu_s 0.440   (2 clean trials, 0.435/0.445)
+
+         The feet are BARE PLASTIC - Bittle X ships no rubber pads - so hard plastic on a smooth
+         floor really does let go near 9 degrees. The old 0.80 randomized to 0.48-1.12, i.e. the
+         entire trained range sat ABOVE the grippiest surface this robot has ever stood on, so
+         foot slip was a phenomenon no policy had ever encountered. Nominal 0.25 sits between the
+         two surfaces and allows for kinetic < static; mj_vec_env randomizes the feet over
+         0.10-0.55 ABSOLUTELY rather than scaling this.
+
+         What this does NOT explain, tested rather than assumed: sweeping mu over 0.80/0.44/0.25/
+         0.156 under trained policies (64 robots, 6 s, randomization off) moves forward
+         speed by only ~6% (0.108 -> 0.100 m/s) and leaves gait
+         cadence bit-identical at 1.17 / 1.33 Hz. So the hardware reports of a faster tempo and
+         of "moving in place" are NOT caused by this, and the plausible-sounding story - stance
+         foot slides out backwards instead of driving the body - is simply not what the physics
+         does at these speeds. The gait-tempo gap belongs to the dof_pos observation mismatch
+         (sim observes true joint angles, hardware observes a servo-model estimate: 1.17 -> 4.65
+         Hz and +0.079 -> -0.020 m/s). This correction is worth making because the number was
+         wrong, not because it fixes the symptom.
+
+         Only the foot value matters at contact: priority=1 makes MuJoCo take the foot geom's
+         friction outright instead of combining it with the floor's. -->
+    <default class="footL">
+      <geom type="sphere" size="0.005"
+            contype="1" conaffinity="2"
+            priority="1" solimp="0.9 0.95 0.001" condim="6" friction="0.25 0.02 0.01"/>
+    </default>
+    <default class="footR">
+      <geom type="sphere" size="0.005"
+            contype="1" conaffinity="2"
+            priority="1" solimp="0.9 0.95 0.001" condim="6" friction="0.25 0.02 0.01"/>
+    </default>
+  </default>
+
+  <asset>
+    <!-- Skybox + ground texture (purely cosmetic, safe to drop if Genesis complains) -->
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0"
+             width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8"
+             width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true"
+              texrepeat="20 20" reflectance="0.2"/>
+
+    <!-- Robot meshes (scale 0.1 = the "scaled" file's correction factor) -->
+    <mesh name="base_frame.001"   file="base_frame.001.obj"   scale="0.1 0.1 0.1"/>
+    <mesh name="battery.001"      file="battery.001.obj"      scale="0.1 0.1 0.1"/>
+    <mesh name="cover.001"        file="cover.001.obj"        scale="0.1 0.1 0.1"/>
+    <!-- Head assembly from MarcHesse/bittle-mujoco (MIT), meshes originally from
+         PetoiCamp/ros_opencat. Authored in MILLIMETRES -- their model applies
+         <mesh scale="0.001 0.001 0.001"/> via a <default> block, which is easy to miss when
+         reading only the <mesh> declarations. Without it MuJoCo reads them as metres and the
+         head renders 1000x oversized, dragging the scene bounds so far the robot vanishes
+         from frame. Ours has no such default, so the scale is stated explicitly per mesh. -->
+    <mesh name="head__1"       file="head__1.obj" scale="0.001 0.001 0.001"/>
+    <mesh name="jaw_1"         file="jaw_1.obj" scale="0.001 0.001 0.001"/>
+    <mesh name="c_neck__1"     file="c_neck__1.obj" scale="0.001 0.001 0.001"/>
+    <mesh name="servo_neck__1" file="servo_neck__1.obj" scale="0.001 0.001 0.001"/>
+    <mesh name="left_knee.002"    file="left_knee.002.obj"    scale="0.1 0.1 0.1"/>
+    <mesh name="shoulder.004"     file="shoulder.004.obj"     scale="0.1 0.1 0.1"/>
+    <mesh name="left_knee.003"    file="left_knee.003.obj"    scale="0.1 0.1 0.1"/>
+    <mesh name="shoulder.007"     file="shoulder.007.obj"     scale="0.1 0.1 0.1"/>
+    <mesh name="right_knee.002.mirror" file="right_knee.002.mirror.obj" scale="0.1 0.1 0.1"/>
+    <mesh name="shoulder.005.mirror" file="shoulder.005.mirror.obj" scale="0.1 0.1 0.1"/>
+    <mesh name="right_knee.003.mirror" file="right_knee.003.mirror.obj" scale="0.1 0.1 0.1"/>
+    <mesh name="shoulder.006.mirror" file="shoulder.006.mirror.obj" scale="0.1 0.1 0.1"/>
+
+    <material name="visualgeom" rgba="1.0 1.0 0.0 1"/>
+  </asset>
+
+  <worldbody>
+    <!-- Lighting + ground -->
+    <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.6 0.6 0.6" specular="0.2 0.2 0.2"
+           directional="true" castshadow="false"/>
+    <!-- Finite (not "0 0" infinite) so the groundplane checker texture's texrepeat below tiles at
+         a scale actually visible relative to this ~10cm robot; an infinite plane renders as a
+         1000m quad in Genesis, which at texrepeat="5 5" makes each checker square ~200m wide
+         (invisible at this scale). 2x2m with texrepeat 20x20 gives 10cm squares. -->
+    <geom name="floor" pos="0 0 0" size="2 2 0.05" type="plane"
+          material="groundplane" condim="3" friction="0.9 0.02 0.01" contype="2" conaffinity="1"/>
+
+    <!-- Robot body hierarchy: copied verbatim from bittle_scaled.xml -->
+    <body name="root" pos="0 0 0.092" quat="1 0 0 0">
+      <site name="imu" size="0.001" pos="0 0 0"/>
+      <!-- Head assembly: PURELY COSMETIC. Replaces the primitive boxes that stood in for
+           it; these are the real Petoi meshes (MarcHesse/bittle-mujoco, MIT, originally
+           PetoiCamp/ros_opencat), so the pointy-eared silhouette is the actual geometry.
+
+           Frame transform: their model is X-FORWARD, ours is Y-FORWARD, so quat is +90 deg
+           about z (x->y, y->-x). In their file every head geom's pos exactly cancels its
+           accumulated body position, i.e. all four meshes are authored in one shared
+           base_link frame -- which is why a single shared transform places all of them.
+           The z offset aligns their base_link origin with our root, derived by matching the
+           SHOULDER JOINT ANCHORS in both models rather than assuming the origins coincide.
+
+           Physics impact: none, by construction.
+             * mass="0" -- the real head's mass is already inside the 193.5 g root inertial
+               (which includes their 18.7 g neck servo), so adding mass would double-count.
+             * class="visualgeom" -- non-colliding, and _build_model strips it before training.
+           Note the real robot's neck joint is not modelled: we do not drive the head servo,
+           so the head is rigidly fixed to the torso here.
+
+           HEAD ALIGNMENT: yaw 90 -> 115.25 deg, pos.x 0 -> +0.01960.
+
+           As shipped the head was yawed ~24 deg to the right about the neck. The large pos.x
+           is not a second defect -- MuJoCo rotates a geom about its OWN origin, not about the
+           neck, so correcting the yaw swings the whole head sideways and the offset brings it
+           back. Fixing rotation and position separately does not converge; they have to be
+           solved together.
+
+           Solved by searching yaw and pos.x directly, rebuilding the model at each candidate
+           so MUJOCO performs every transform, and scoring the two points that must both sit
+           on the centreline:
+
+               neck base x    snout x
+               original      +0.00 mm    +22.45 mm
+               solved        +0.10 mm     -0.03 mm
+
+           Verified against cameras DEFINED IN THE MODEL on the x=0 plane, so the image centre
+           is that plane by construction rather than by an assumed azimuth convention.
+
+           Five earlier attempts failed, every one by trusting a measurement without checking
+           what it measured: an mjvCamera azimuth whose image "up" was never checked against
+           +y; a search range that excluded the answer; a nearest-neighbour "symmetry" score
+           that is near zero for ANY dense cloud overlapping its mirror; an analysis over raw
+           mesh_vert, which is pre-transform and not what MuJoCo places; and hand-composed
+           rotation matrices that silently produced non-yaw quaternions. Letting the simulator
+           do the transform and scoring two named landmarks is what finally worked.
+
+           Cosmetic only: all four geoms are mass="0" class="visualgeom" (contype=0/
+           conaffinity=0) and _build_model deletes them before training, so no policy has ever
+           seen them and nothing here can affect a run. -->
+      <geom name="head_c" type="mesh" mesh="head__1" pos="0.01500 0.01000 -0.02500"
+            quat="0.456064 0.138759 0.072233 0.876090" mass="0" class="visualgeom"/>
+      <geom name="jaw_c" type="mesh" mesh="jaw_1" pos="0.01500 0.01000 -0.02500"
+            quat="0.456064 0.138759 0.072233 0.876090" mass="0" class="visualgeom"/>
+      <geom name="neck_c" type="mesh" mesh="c_neck__1" pos="0.01500 0.01000 -0.02500"
+            quat="0.456064 0.138759 0.072233 0.876090" mass="0" class="visualgeom"/>
+      <geom name="neck_servo_c" type="mesh" mesh="servo_neck__1" pos="0.01500 0.01000 -0.02500"
+            quat="0.456064 0.138759 0.072233 0.876090" mass="0" class="visualgeom" rgba="0.15 0.15 0.15 1"/>
+      <freejoint/>
+      <!-- Torso mass, CoM and inertia. Composed from MarcHesse/bittle-mujoco (MIT), whose
+           meshes and component masses come from PetoiCamp/ros_opencat and were validated
+           against a physical unit (273.5 g total).
+
+           HISTORY, because two of these were wrong in different directions:
+             1. Originally mass=0.165, diaginertia="0.001 0.001 0.001" -- three identical
+                round numbers, i.e. a placeholder, and a total model mass of 257 g, below
+                Petoi's own 265-290 g spec.
+             2. Then "corrected" to a uniform-box estimate, 1.804e-4 / 7.175e-5 / 2.248e-4.
+                That was 3-5x TOO LOW and worse than the placeholder it replaced. A uniform
+                box is a poor model here: the mass sits at the extremes -- four shoulder
+                servos at the corners, the neck servo 66 mm forward, the battery low -- and
+                that distal mass dominates the tensor.
+             3. Now composed properly: sum the torso-fixed bodies (frame 77 g + battery 55 g
+                + neck servo 18.7 g + 4 shoulder servos 10.7 g = 193.5 g) via the parallel
+                axis theorem about their common CoM, then rotate their X-forward frame into
+                our Y-forward one (+90 deg about z, so Ixx and Iyy exchange).
+           CoM origins were aligned through the shoulder joint anchors, which exist in both
+           models, rather than by assuming the body origins coincide. -->
+      <inertial pos="-0.0009 0.0065 -0.0076" mass="0.1935"
+                diaginertia="8.0017e-04 3.5846e-04 6.9298e-04"/>
+      <geom name="base_frame_c" type="mesh" mesh="base_frame.001" group="1" class="visualgeom"/>
+      <geom type="mesh" rgba="1.0 1.0 0.0 1" mesh="base_frame.001"/>
+      <geom name="battery_c" pos="0.000047 -0.000917 -0.004848" quat="1 0 0 0" type="mesh" mesh="battery.001" group="1" class="visualgeom"/>
+      <geom type="mesh" rgba="0.0 0.0 0.0 1" mesh="battery.001" pos="0.000047 -0.000917 -0.004848" quat="1 0 0 0"/>
+      <geom name="cover_c" pos="0.00014 0 0.01251" quat="1 0 0 0" type="mesh" mesh="cover.001" group="1" class="visualgeom"/>
+      <geom type="mesh" rgba="0.0 0.0 0.0 1" mesh="cover.001" pos="0.00014 0 0.01251" quat="1 0 0 0"/>
+
+      <body name="left-back-shoulder-link" pos="-0.044596 -0.051923 -0.002102" quat="0.499998 0.5 -0.500002 -0.5">
+        <inertial pos="0 -0.024575 0.004372" mass="0.006" diaginertia="2.034e-06 1.708e-07 2.091e-06"/>
+        <joint name="left-back-shoulder-joint" pos="0 0 0" axis="0 0 1" range="-1.5708 1.6" actuatorfrcrange="-1000 1000"/>
+        <geom name="left_back_shoulder_c" pos="0 -0.024575 0.004372" quat="0.499998 -0.5 0.5 0.500002" type="mesh" mesh="shoulder.004" group="1" class="visualgeom"/>
+        <geom type="mesh" rgba="1.0 1.0 0.0 1" mesh="shoulder.004" pos="0 -0.024575 0.004372" quat="0.499998 -0.5 0.5 0.500002"/>
+        <body name="left-back-knee-link" pos="0 -0.049172 0">
+          <inertial pos="-0.008998 0 -0.014638" mass="0.014" diaginertia="2.310e-06 6.403e-06 4.520e-06"/>
+          <joint name="left-back-knee-joint" pos="0 0 0" axis="0 0 1" range="-1.22173 1.48353" actuatorfrcrange="-1000 1000"/>
+          <geom name="left_back_knee_c" pos="-0.008998 0 -0.014638" quat="0.499998 -0.5 0.5 0.500002" type="mesh" mesh="left_knee.002" group="1" class="visualgeom"/>
+          <geom type="mesh" rgba="0.0 0.0 0.0 1" mesh="left_knee.002" pos="-0.008998 0 -0.014638" quat="0.499998 -0.5 0.5 0.500002"/>
+          <geom name="left_back_foot" class="footL" pos="-0.05024 -0.00037 -0.01349"/>
+          <site name="left_back_foot" pos="-0.05024 -0.00037 -0.01349" type="sphere" size="0.005"/>
+        </body>
+      </body>
+
+      <body name="left-front-shoulder-link" pos="-0.044596 0.052264 -0.002102" quat="0.499998 0.5 -0.500002 -0.5">
+        <inertial pos="0 -0.024575 0.004372" mass="0.006" diaginertia="2.034e-06 1.708e-07 2.091e-06"/>
+        <joint name="left-front-shoulder-joint" pos="0 0 0" axis="0 0 1" range="-1.5708 1.6" actuatorfrcrange="-1000 1000"/>
+        <geom name="left_front_shoulder_c" pos="0 -0.024575 0.004372" quat="0.499998 -0.5 0.5 0.500002" type="mesh" mesh="shoulder.007" group="1" class="visualgeom"/>
+        <geom type="mesh" rgba="1.0 1.0 0.0 1" mesh="shoulder.007" pos="0 -0.024575 0.004372" quat="0.499998 -0.5 0.5 0.500002"/>
+        <body name="left-front-knee-link" pos="6e-06 -0.049172 0">
+          <inertial pos="-0.009232 0 -0.014614" mass="0.014" diaginertia="2.311e-06 6.400e-06 4.516e-06"/>
+          <joint name="left-front-knee-joint" pos="0 0 0" axis="0 0 1" range="-1.22173 1.48353" actuatorfrcrange="-1000 1000"/>
+          <geom name="left_front_knee_c" pos="-0.009232 0 -0.014614" quat="0.499998 -0.5 0.5 0.500002" type="mesh" mesh="left_knee.003" group="1" class="visualgeom"/>
+          <geom type="mesh" rgba="0.0 0.0 0.0 1" mesh="left_knee.003" pos="-0.009232 0 -0.014614" quat="0.499998 -0.5 0.5 0.500002"/>
+          <geom name="left_front_foot" class="footL" pos="-0.05048 -0.00037 -0.01347"/>
+          <site name="left_front_foot" pos="-0.05048 -0.00037 -0.01347" type="sphere" size="0.005"/>
+        </body>
+      </body>
+
+      <body name="right-back-shoulder-link" pos="0.044596 -0.051923 -0.002102" quat="0.499998 0.5 0.500002 0.5">
+        <inertial pos="0 -0.024575 0.004372" mass="0.006" diaginertia="2.034e-06 1.708e-07 2.091e-06"/>
+        <joint name="right-back-shoulder-joint" pos="0 0 0" axis="0 0 -1" range="-1.5708 1.6" actuatorfrcrange="-1000 1000"/>
+        <geom name="right_back_shoulder_c" pos="0 -0.024575 0.004372" quat="-0.499998 0.5 0.5 0.500002" type="mesh" mesh="shoulder.005.mirror" group="1" class="visualgeom"/>
+        <geom type="mesh" rgba="1.0 1.0 0.0 1" mesh="shoulder.005.mirror" pos="0 -0.024575 0.004372" quat="-0.499998 0.5 0.5 0.500002"/>
+        <body name="right-back-knee-link" pos="0 -0.049172 0">
+          <inertial pos="0.008998 0 -0.014638" mass="0.014" diaginertia="2.310e-06 6.403e-06 4.520e-06"/>
+          <joint name="right-back-knee-joint" pos="0 0 0" axis="0 0 -1" range="-1.22173 1.48353" actuatorfrcrange="-1000 1000"/>
+          <geom name="right_back_knee_c" pos="0.008998 0 -0.014638" quat="-0.499998 0.5 0.5 0.500002" type="mesh" mesh="right_knee.002.mirror" group="1" class="visualgeom"/>
+          <geom type="mesh" rgba="0.0 0.0 0.0 1" mesh="right_knee.002.mirror" pos="0.008998 0 -0.014638" quat="-0.499998 0.5 0.5 0.500002"/>
+          <geom name="right_back_foot" class="footR" pos="0.05024 -0.00037 -0.01349"/>
+          <site name="right_back_foot" pos="0.05024 -0.00037 -0.01349" type="sphere" size="0.005"/>
+        </body>
+      </body>
+
+      <body name="right-front-shoulder-link" pos="0.044596 0.052264 -0.002102" quat="0.499998 0.5 0.500002 0.5">
+        <inertial pos="0 -0.024575 0.004372" mass="0.006" diaginertia="2.034e-06 1.708e-07 2.091e-06"/>
+        <joint name="right-front-shoulder-joint" pos="0 0 0" axis="0 0 -1" range="-1.5708 1.6" actuatorfrcrange="-1000 1000"/>
+        <geom name="right_front_shoulder_c" pos="0 -0.024575 0.004372" quat="-0.499998 0.5 0.5 0.500002" type="mesh" mesh="shoulder.006.mirror" group="1" class="visualgeom"/>
+        <geom type="mesh" rgba="1.0 1.0 0.0 1" mesh="shoulder.006.mirror" pos="0 -0.024575 0.004372" quat="-0.499998 0.5 0.5 0.500002"/>
+        <body name="right-front-knee-link" pos="-6e-06 -0.049172 0">
+          <inertial pos="0.009232 0 -0.014614" mass="0.014" diaginertia="2.311e-06 6.400e-06 4.516e-06"/>
+          <joint name="right-front-knee-joint" pos="0 0 0" axis="0 0 -1" range="-1.22173 1.48353" actuatorfrcrange="-1000 1000"/>
+          <geom name="right_front_knee_c" pos="0.009232 0 -0.014614" quat="-0.499998 0.5 0.5 0.500002" type="mesh" mesh="right_knee.003.mirror" group="1" class="visualgeom"/>
+          <geom type="mesh" rgba="0.0 0.0 0.0 1" mesh="right_knee.003.mirror" pos="0.009232 0 -0.014614" quat="-0.499998 0.5 0.5 0.500002"/>
+          <geom name="right_front_foot" class="footR" pos="0.05048 -0.00037 -0.01347"/>
+          <site name="right_front_foot" pos="0.05048 -0.00037 -0.01347" type="sphere" size="0.005"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- ============================================================
+       Actuators: position-controlled, per-joint ctrlrange matching
+       the joint mechanical limits. RL env should still normalize
+       to [-1, 1] in software for cleaner policy outputs.
+       ============================================================ -->
+  <actuator>
+    <position name="lf_shoulder" joint="left-front-shoulder-joint"  ctrlrange="-1.5708 1.6"/>
+    <position name="lf_knee"     joint="left-front-knee-joint"      ctrlrange="-1.22 1.49"/>
+    <position name="lb_shoulder" joint="left-back-shoulder-joint"   ctrlrange="-1.5708 1.6"/>
+    <position name="lb_knee"     joint="left-back-knee-joint"       ctrlrange="-1.22 1.49"/>
+    <position name="rb_shoulder" joint="right-back-shoulder-joint"  ctrlrange="-1.5708 1.6"/>
+    <position name="rb_knee"     joint="right-back-knee-joint"      ctrlrange="-1.22 1.49"/>
+    <position name="rf_shoulder" joint="right-front-shoulder-joint" ctrlrange="-1.5708 1.6"/>
+    <position name="rf_knee"     joint="right-front-knee-joint"     ctrlrange="-1.22 1.49"/>
+  </actuator>
+
+  <!-- ============================================================
+       Sensors: enough for typical quadruped RL.
+       Joint angles + velocities give proprioception.
+       Orientation + gyro + accelerometer give full IMU.
+       framepos / framelinvel give body state for reward shaping.
+       ============================================================ -->
+  <sensor>
+    <!-- proprioception -->
+    <jointpos name="lf_shoulder_pos" joint="left-front-shoulder-joint"/>
+    <jointpos name="lf_knee_pos"     joint="left-front-knee-joint"/>
+    <jointpos name="lb_shoulder_pos" joint="left-back-shoulder-joint"/>
+    <jointpos name="lb_knee_pos"     joint="left-back-knee-joint"/>
+    <jointpos name="rb_shoulder_pos" joint="right-back-shoulder-joint"/>
+    <jointpos name="rb_knee_pos"     joint="right-back-knee-joint"/>
+    <jointpos name="rf_shoulder_pos" joint="right-front-shoulder-joint"/>
+    <jointpos name="rf_knee_pos"     joint="right-front-knee-joint"/>
+
+    <jointvel name="lf_shoulder_vel" joint="left-front-shoulder-joint"/>
+    <jointvel name="lf_knee_vel"     joint="left-front-knee-joint"/>
+    <jointvel name="lb_shoulder_vel" joint="left-back-shoulder-joint"/>
+    <jointvel name="lb_knee_vel"     joint="left-back-knee-joint"/>
+    <jointvel name="rb_shoulder_vel" joint="right-back-shoulder-joint"/>
+    <jointvel name="rb_knee_vel"     joint="right-back-knee-joint"/>
+    <jointvel name="rf_shoulder_vel" joint="right-front-shoulder-joint"/>
+    <jointvel name="rf_knee_vel"     joint="right-front-knee-joint"/>
+
+    <!-- IMU at root site -->
+    <framequat    name="imu_orientation" objtype="site" objname="imu"/>
+    <gyro         name="imu_gyro"         site="imu"/>
+    <accelerometer name="imu_accel"       site="imu"/>
+
+    <!-- Body state (useful for forward-velocity rewards) -->
+    <framepos     name="root_pos"     objtype="site" objname="imu"/>
+    <framelinvel  name="root_linvel"  objtype="site" objname="imu"/>
+
+    <!-- Foot world positions, for the feet_air_time reward's contact test. Present for
+         mj_vec_env.py: mujoco.rollout returns sensordata for the whole batch alongside the state,
+         so reading foot height from a sensor costs nothing, whereas geom_xpos would need a
+         separate per-env mj_forward. The sites sit at the foot spheres' centres, so a foot is in
+         contact when its z is below (radius + a small margin) - see FEET_CONTACT_HEIGHT_THRESHOLD.
+         Nothing indexes sensordata positionally, so appending here is safe. -->
+    <framepos name="left_back_foot_pos"   objtype="site" objname="left_back_foot"/>
+    <framepos name="left_front_foot_pos"  objtype="site" objname="left_front_foot"/>
+    <framepos name="right_back_foot_pos"  objtype="site" objname="right_back_foot"/>
+    <framepos name="right_front_foot_pos" objtype="site" objname="right_front_foot"/>
+
+    <!-- Actuator force, for the `power` reward's mechanical-power term (sum |tau * qdot|).
+         Read from a sensor rather than recomputed as kp*(target-q) - kv*qdot because both
+         gains are domain-randomised per environment (mj_vec_env randomises actuator_gainprm
+         and actuator_biasprm together) and forcerange is randomised separately, so an
+         analytic copy would have to track three DR paths to stay correct. MuJoCo already
+         applies the clamp. Order matches the actuator block above, not joint DFS order.
+         As with the foot sensors, nothing indexes sensordata positionally. -->
+    <actuatorfrc name="lf_shoulder_frc" actuator="lf_shoulder"/>
+    <actuatorfrc name="lf_knee_frc"     actuator="lf_knee"/>
+    <actuatorfrc name="lb_shoulder_frc" actuator="lb_shoulder"/>
+    <actuatorfrc name="lb_knee_frc"     actuator="lb_knee"/>
+    <actuatorfrc name="rb_shoulder_frc" actuator="rb_shoulder"/>
+    <actuatorfrc name="rb_knee_frc"     actuator="rb_knee"/>
+    <actuatorfrc name="rf_shoulder_frc" actuator="rf_shoulder"/>
+    <actuatorfrc name="rf_knee_frc"     actuator="rf_knee"/>
+  </sensor>
+
+  <!-- ============================================================
+       Keyframe: standing pose. qpos layout is
+         [x y z  qw qx qy qz   8 joint angles in DFS order]
+       Joint order (DFS from root):
+         lb_shoulder, lb_knee,  lf_shoulder, lf_knee,
+         rb_shoulder, rb_knee,  rf_shoulder, rf_knee
+       0.56 rad ~ 32 deg, all legs symmetric.
+
+       Base z: forward kinematics puts the lowest toe 0.09436 below
+       the base at this joint configuration, and settling under gravity gives 0.09382 (~0.3mm of
+       contact penetration); 0.0938 starts the robot in equilibrium instead of dropping on every
+       reset. 0.085 was close but not exact - it predates any of this being measured.
+
+       An intermediate revision of this file set 0.0533 here. That was wrong, and came from
+       putting the foot spheres 4cm up the shin (see the footL/footR comment): the robot stood on
+       its knees, and every height-dependent constant got dragged down with it. If you see 0.0533
+       anywhere, it belongs to that mistake.
+
+       Anything comparing against this height must move with it - pio.BASE_HEIGHT_TARGET, the
+       env cfgs' base_init_pos / base_height_target. The base_height reward scale is -50, so a
+       stale target dominates the return.
+       ============================================================ -->
+  <keyframe>
+    <key name="home"
+         qpos="0 0 0.0941  1 0 0 0
+               0.56 0.56  0.56 0.56  0.56 0.56  0.56 0.56"
+         ctrl="0.56 0.56 0.56 0.56 0.56 0.56 0.56 0.56"/>
+  </keyframe>
+</mujoco>

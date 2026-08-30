@@ -1,0 +1,44 @@
+# NOTE: git has no trailing comments in .gitignore -- a '#' only starts a comment at the
+# start of a line. "old_logs/  # big" matches nothing, which briefly cost 3 GB of blobs here.
+
+# Training runs: checkpoints and tensorboard, regenerable from code + config.
+# logs/shipped/ is the exception -- it is the policy the README tells you to watch, so it
+# is tracked. Listing the directory rather than its contents is deliberate: git does not
+# descend into an excluded directory, so `logs/` + `!logs/shipped/` would NOT work.
+/logs/*
+!/logs/shipped/
+/.logs/
+
+# runs/ is TRACKED, and that is the point. _write_run_manifest() writes config.json,
+# command.txt, git.txt and uncommitted.patch there precisely BECAUSE logs/ is ignored --
+# a few KB of text that is the only versioned record of what produced a checkpoint. This
+# used to say `/runs/`, which ignored the whole thing and left every run's provenance on
+# one disk: exactly the failure the manifest exists to prevent. Guard against heavy
+# artifacts landing here by accident instead of ignoring the tree.
+/runs/**/*.pt
+/runs/**/events.out.tfevents.*
+
+# 9.3 GB of archived training checkpoints from the development history.
+old_logs/
+# arduino-cli firmware build output.
+build/
+
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.python-version
+
+# Local agent settings: machine-specific absolute paths, not repo content. Ignored via a
+# global gitignore on the author's machine -- listed here so the protection travels.
+.claude/settings.local.json
+
+# The quickstart writes its sim rollout to ./gait.mp4, and gait_compare.mp4 is the HD
+# side-by-side render kept for optional upload to GitHub's CDN. Both are regenerable, and
+# neither should show up as untracked noise for anyone following the README.
+gait.mp4
+gait_compare.mp4
+
+# Scratch folder of crop options for the README gif; delete once one is chosen.
+gait_options/

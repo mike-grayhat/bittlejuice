@@ -1,0 +1,38 @@
+{
+  "run_id": "post_reflash",
+  "firmware": "G Bittle X B10_260717 ?",
+  "imu": {
+    "chip": "ICM",
+    "has_accel": true,
+    "has_raw_gyro": false,
+    "rate_hz": 248.63,
+    "pitch_stdev_deg": null,
+    "roll_stdev_deg": null,
+    "pitch_bias_deg": null,
+    "roll_bias_deg": null,
+    "gravity_convention_validated": null,
+    "latency_ms": null,
+    "angvel_snr": null
+  },
+  "feedback": {
+    "all_joints_hz": 9.25,
+    "single_joint_hz": 40.0,
+    "frame_width": 9,
+    "column_noise_deg": null
+  },
+  "control": {
+    "command_rate_hz": 50.0,
+    "overrun_pct": 0.0,
+    "target_hz": 50.0,
+    "action_latency_ms": null,
+    "max_slew_deg_per_s": 45.9,
+    "actuator_tau_ms": 400.0,
+    "actuator_f3db_hz": 0.4,
+    "step_slew_deg_s": 395.1,
+    "bodyid_knee_hz": null,
+    "slowest_joint_slew_deg_per_s": 39.0
+  },
+  "battery": {
+    "probe_voltage": 8.12
+  }
+}

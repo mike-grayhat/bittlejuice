@@ -1,0 +1,22 @@
+# Turning in place and on the move.
+#
+# ---------------------------------------------------------------------------------------
+# UNVALIDATED. This is a starting point, not a recipe. It differs from walk.yaml only in the
+# command distribution -- the honest edit -- but nobody has run the four-seed pool against
+# it, so the tracking sigmas below are walk.yaml's and are very likely wrong for a
+# turn-dominant objective: tracking_sigma_ang is what decides how hard the policy is pushed
+# on the axis you now care about most.
+#
+# Treat the numbers as a hypothesis. The procedure in docs/training.md -- four seeds, then
+# tools/policy_score.py to rank them -- is what turns it into a recipe.
+# ---------------------------------------------------------------------------------------
+
+extends: base.yaml
+
+description: Turning-dominant commands. UNVALIDATED starting point.
+
+command_vx: [0.0, 0.06]        # slow, so yaw rather than forward speed dominates the reward
+heading: true
+ang_vel_range: [-1.2, 1.2]     # twice walk.yaml's range
+tracking_sigma: 0.0036
+tracking_sigma_ang: 0.36       # <- the first knob to sweep

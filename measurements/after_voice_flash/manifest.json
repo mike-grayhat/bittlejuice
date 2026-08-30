@@ -1,0 +1,15 @@
+{
+  "run_id": "after_voice_flash",
+  "started": "2026-08-28T22:48:12",
+  "host": "Mac.lan",
+  "experiments": {
+    "probe": {
+      "firmware": "G Bittle X B10_260820 ?",
+      "realtime_mode": true,
+      "imu_rate_hz": 248.93,
+      "feedback_all_hz": 8.75,
+      "feedback_one_hz": 39.98
+    }
+  },
+  "finished": "2026-08-28T22:48:39"
+}

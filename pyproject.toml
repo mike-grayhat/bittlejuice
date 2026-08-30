@@ -1,0 +1,32 @@
+[project]
+name = "bittlejuice"
+version = "0.1.0"
+description = "Bittle X RL Playground"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mujoco>=3.11.0",
+    "torch>=2.0.0",
+    "rsl-rl-lib>=5.0.0",
+    "tensorboard",
+    "tensordict",
+    # bittle_io's serial layer; deploy/ pins its own copy for the Pi.
+    "pyserial>=3.5",
+    # mj_eval --video. The headless render is the only way to watch a gait over SSH or on a
+    # machine without a display, so it is a hard dependency rather than an extra.
+    "imageio[ffmpeg]>=2.34",
+    # Training configs (configs/*.yaml). Input only -- the run manifest stays JSON, which
+    # sorts its keys and therefore diffs cleanly between two runs.
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Two entries replace five hand-rolled sys.path.insert calls across the suite. Resolved
+# relative to rootdir by pytest's built-in pythonpath plugin.
+pythonpath = ["sim", "deploy"]

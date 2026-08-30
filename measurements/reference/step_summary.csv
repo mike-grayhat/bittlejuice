@@ -1,0 +1,2 @@
+joint,small_samples,small_dead_time_ms,small_tau_ms,small_f3db_hz,small_slew_deg_s,small_r2,large_samples,large_dead_time_ms,large_tau_ms,large_f3db_hz,large_slew_deg_s,large_r2
+8,456,0.0,400.0,0.4,117.9,-0.29,456,0.0,164.1,0.97,395.1,-0.081

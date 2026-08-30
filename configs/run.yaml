@@ -1,0 +1,56 @@
+# Faster forward locomotion.
+#
+# ---------------------------------------------------------------------------------------
+# UNVALIDATED, and the most likely of the three to need more than a command change. Measured
+# on this robot, forward speed is bounded by actuator dead time long before it is bounded by
+# the policy: 0.091 m/s at 0 ms of command->joint delay against 0.035 m/s at 200-320 ms. The
+# patched firmware sits near the top of that curve at ~22 ms, so there is headroom -- but the
+# slew penalties inherited from base.yaml are tuned to keep a 0.1 m/s gait inside the servo's
+# 137 deg/s limit, and a faster gait will hit that limit rather than the reward.
+#
+# Expect to retune action_slew and action_jerk here, and to check clamp_hits in the deploy
+# loop's output before believing any speed the simulator reports.
+# ---------------------------------------------------------------------------------------
+
+extends: base.yaml
+
+description: Faster forward locomotion. UNVALIDATED; expect to retune the slew penalties.
+
+# Terrain stays ON but at half base.yaml's amplitude, and below config.py's own 0.008
+# default. Disabling it outright is the tempting move and the wrong one: terrain exists
+# because policies on this robot were measured ~99% OPEN-LOOP, ignoring the IMU entirely,
+# and it is the transient per-footfall disturbance that forces closed-loop behaviour. A
+# policy trained flat is faster in sim and reverts to feedforward, which you find out on
+# the floor rather than in training. Note feet_slip is ~14x larger on terrain than flat,
+# so removing it silently changes which penalties bite at all.
+#
+# 0.006 is a hypothesis, not a result: a faster gait spends less time in contact, so the
+# same bumps hit harder, but nobody has measured where that trade sits. speed-probe
+# (0.012) vs speed-probe-lowterr (0.006) at the same seed is the A/B.
+terrain_amplitude: 0.006
+
+# tracking_sigma scales as command^2 (mj_vec_env:1311). walk.yaml pairs 0.10 with 0.0036,
+# so 0.20 needs 0.0036 * (0.20/0.10)^2 = 0.0144. Leaving it at walk's value would put the
+# whole ACHIEVABLE range outside one sigma of the command: exp(-err^2/sigma) at a 0.13 m/s
+# error is 0.009, i.e. no tracking gradient anywhere the robot can operate, and the optimal
+# policy becomes crawling. mj_vec_env:106 documents that failure for pushes; an unreachable
+# command produces it too.
+#
+# tracking_sigma_ang deliberately does NOT follow. Coupling them loosened residual yaw from
+# 0.19 to 1.41 deg/s on the 0.2 m/s runs, curving the path 17% of distance travelled.
+command_vx: [0.0, 0.20]
+heading: true
+ang_vel_range: [-0.6, 0.6]
+tracking_sigma: 0.0144
+tracking_sigma_ang: 0.36
+
+# BEFORE tuning any reward here, settle whether this robot is policy-limited or
+# actuator-limited. One seed:
+#
+#   uv run python sim/mj_train.py --config configs/walk.yaml -e speed-probe --seed 0 \
+#       --command-vx 0.0 0.20 --tracking-sigma 0.0144
+#
+# then read achieved fwd_vel_mps against the command, and the slew clamp rate. The measured
+# ceiling at the patched firmware's ~22 ms dead time is ~0.090 m/s. If speed saturates there
+# with the slew limit binding, no reward shaping produces a run, and this objective's honest
+# target is 0.12-0.15 rather than 0.22.

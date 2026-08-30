@@ -1,0 +1,3 @@
+[submodule "OpenCatEsp32-Quadruped-Robot"]
+	path = firmware
+	url = https://github.com/mike-grayhat/OpenCatEsp32-Quadruped-Robot.git

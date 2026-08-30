@@ -1,0 +1,38 @@
+{
+  "run_id": "after_flash",
+  "started": "2026-08-28T19:51:05",
+  "host": "Mac.lan",
+  "experiments": {
+    "probe": {
+      "firmware": "Bittle X B10_260820 ?",
+      "realtime_mode": true,
+      "imu_rate_hz": 248.92,
+      "feedback_all_hz": 9.25,
+      "feedback_one_hz": 39.74
+    },
+    "cmdrate": {
+      "voltage_start": 8.27,
+      "voltage_end": 8.21,
+      "duration_s": 10.32,
+      "commands": 500,
+      "rate_hz": 50.0,
+      "median_gap_ms": 19.9,
+      "p95_gap_ms": 24.0,
+      "max_gap_ms": 24.89,
+      "target_hz": 50.0,
+      "overruns": 0,
+      "overrun_pct": 0.0
+    },
+    "latency": {
+      "voltage_start": 8.23,
+      "voltage_end": 8.24,
+      "duration_s": 57.97,
+      "trials": 12,
+      "latency_ms_median": 54.1,
+      "latency_ms_min": 42.9,
+      "latency_ms_max": 74.4,
+      "method": "imu"
+    }
+  },
+  "finished": "2026-08-28T19:57:58"
+}

@@ -1,0 +1,31 @@
+{
+  "port": "/dev/cu.usbmodem5AA90270111",
+  "firmware": "G Bittle X B10_260820 ?",
+  "board_is_esp32": true,
+  "board_code": "B",
+  "build_date": "260820",
+  "imu_chip": "ICM",
+  "imu_has_accel": true,
+  "imu_stream_rate_hz": 248.93,
+  "realtime_mode_supported": true,
+  "imu_sample": "ICM: -0.57  0.18 10.00  285.1   -3.4    0.9",
+  "feedback_all_rate_hz": 8.75,
+  "feedback_one_rate_hz": 39.98,
+  "feedback_speedup": 4.57,
+  "frame_width": 9,
+  "joint_reply_lines": [
+    "=",
+    "0\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\t12\t13\t14\t15",
+    "-30,\t-80,\t-45,\t0,\t0,\t0,\t0,\t0,\t75,\t75,\t75,\t75,\t-55,\t-55,\t-55,\t-55,",
+    "j"
+  ],
+  "joint_reply_parsed": true,
+  "voltage": 7.79,
+  "has_signal_generator": true,
+  "has_raw_gyro": false,
+  "feedback_survives_command": false,
+  "feedback_polled_rate_hz": 12.83,
+  "notes": [
+    "a motion command stops the `f` stream; sweep/jointmap/latency poll f<joint> per sample instead of streaming"
+  ]
+}

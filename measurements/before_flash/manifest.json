@@ -1,0 +1,25 @@
+{
+  "run_id": "before_flash",
+  "started": "2026-08-28T19:44:02",
+  "host": "Mac.lan",
+  "experiments": {
+    "probe": {
+      "firmware": "Bittle X B10_260717 ?",
+      "realtime_mode": false,
+      "imu_rate_hz": 249.21,
+      "feedback_all_hz": 9.24,
+      "feedback_one_hz": 39.75
+    },
+    "latency": {
+      "voltage_start": 8.31,
+      "voltage_end": 8.25,
+      "duration_s": 60.58,
+      "trials": 15,
+      "latency_ms_median": 53.6,
+      "latency_ms_min": 45.6,
+      "latency_ms_max": 170.5,
+      "method": "imu"
+    }
+  },
+  "finished": "2026-08-28T19:45:45"
+}

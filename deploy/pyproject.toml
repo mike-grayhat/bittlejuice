@@ -1,0 +1,9 @@
+[project]
+name = "bittle-rpi-deploy"
+version = "0.1.0"
+description = "Standalone Raspberry Pi runtime for the trained Bittle X locomotion policy -- numpy + pyserial only, no jax/mujoco."
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.24",
+    "pyserial>=3.5",
+]
