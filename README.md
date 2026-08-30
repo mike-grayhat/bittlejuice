@@ -108,7 +108,12 @@ than a bad policy, and refit against your own hardware with
 **1. Flash the firmware.** Stock firmware cannot run this control loop — it ramps every pose
 command and caps the IMU at 5 Hz. The patches add a **runtime mode** that is off at boot, so
 a flashed robot still walks, dances and answers the app exactly as before until something asks.
-Full instructions, including which robots the prebuilt image fits:
+
+A prebuilt image is on the
+[releases page](https://github.com/mike-grayhat/bittlejuice/releases), built by CI from the
+pinned submodule and published with the robot, board and revision it was compiled for — it is
+**Bittle X / BiBoard V1.0 / Rev D/E only**, and those are compile-time choices, so a different
+board needs its own build. Both paths, and how to tell which you need:
 **[docs/firmware.md](docs/firmware.md)**.
 
 **2. Bring it up in stages, off the ground first.** The order matters and every stage is a

@@ -111,6 +111,11 @@ optional.
    confirmation that the build really did pick up the patched tree. Record the md5 the
    script prints and check it against the image you flash.
 
+   **That md5 is of the app image** (`OpenCatEsp32.ino.bin`), which is what you flash when
+   you build locally. A release image is the *merged* binary — bootloader + partitions +
+   app — so it has a different md5, the one printed in the release notes. Compare like with
+   like: the script's md5 against a local build, the release notes' md5 against a download.
+
 5. Battery charged. Servos cool. Robot **suspended, legs free**.
 
 ## After flashing — the battery, in this order
