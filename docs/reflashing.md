@@ -265,20 +265,30 @@ does not raise).
 
 ## Rollback
 
-There are two different rollbacks and it is worth being precise about which one you have,
-because "everything is in the repository, worst case just roll back" is only half true:
+There are three different rollbacks and it is worth being precise about which one you have,
+because "everything is in the repository, worst case just roll back" is only half true — two
+of the three rebuild from source, and neither restores the robot's calibration:
 
 | target | what it gets you | where it comes from |
 |---|---|---|
 | **unpatched B10_260717** | isolates *the patches* from *eight months of upstream change* | `./tools/build_firmware.sh --stock`, in this repo |
 | **B10_251121** | the build the entire measurement corpus was taken against | `./tools/build_firmware.sh --baseline` — rebuilt from `32a1fcb` in this checkout's history |
+| **the flash dump** | the robot exactly as it was, calibration included | `backups/<stamp>.bin`, written by `tools/flash_firmware.py` before every flash |
+
+The third one is the only **byte-exact** rollback, and the only one that restores `nvs`. The
+other two rebuild an image from source; this one puts back the 4 MB that were actually on the
+chip — bootloader, partition table, calibration and app. Restore it with:
+
+```bash
+uv run python tools/flash_firmware.py --port $PORT --restore backups/<stamp>.bin
+```
 
 If the battery says the new build is worse in a way the `--stock` control also reproduces,
 the cause is upstream drift rather than the patches, and `--baseline` puts the robot back
 on the source the measured constants were taken against.
 
-The one residual caveat: `--baseline` reconstructs 251121 from *source*, with a toolchain
-that is not necessarily Petoi's. Same source, therefore same behaviour, but not the same
+The one residual caveat, and the reason the flash dump is worth keeping: `--baseline`
+reconstructs 251121 from *source*, with a toolchain that is not necessarily Petoi's. Same source, therefore same behaviour, but not the same
 bytes — so if the rebuilt baseline does not reproduce the old measurements, "the rebuild
 differs from what shipped" stays on the list of explanations.
 

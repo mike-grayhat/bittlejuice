@@ -63,31 +63,15 @@ jobs:
       - name: Build
         run: tools/build_firmware.sh
 
-      # arduino-cli emits three binaries that must be flashed together, at three offsets,
-      # under a partition scheme (huge_app) that is NOT the ESP32 default. Publishing only
-      # the app image would let someone flash it onto a board still carrying a 1.25 MB app
-      # partition and run off the end of the slot. Merging removes both hazards, and is the
-      # same recipe as docs/firmware.md's maintainer section.
-      # The build is compile-time specific to one robot, board and revision, and flashing it
-      # onto a different one moves the wrong servos or reads battery voltage off the wrong
-      # pin. Read the defines out of the tree that was actually compiled rather than
-      # restating them, so neither the filename nor the release notes can drift from the
-      # image. This runs BEFORE the merge because the filename is built from its outputs.
+      # The build is compile-time specific to one robot, board and revision, and flashing
+      # it onto a different one moves the wrong servos or reads battery voltage off the
+      # wrong pin. tools/firmware_target.py reads that out of the tree that was actually
+      # compiled -- the same function tools/flash_firmware.py gates on, so the image, its
+      # name, its notes and the flash-time check cannot disagree with each other.
+      # Runs BEFORE the merge because the filename is built from its outputs.
       - name: Record what it was built for
         id: target
-        run: |
-          defined() { grep -qE "^[[:space:]]*#define[[:space:]]+$1\b" "$2"; }
-          for m in BITTLE NYBBLE CUB; do
-            defined "$m" firmware/OpenCatEsp32.ino && echo "robot=$m" >> "$GITHUB_OUTPUT" || true
-          done
-          for b in BiBoard_V0_1 BiBoard_V0_2 BiBoard_V1_0 BiBoard2; do
-            defined "$b" firmware/OpenCatEsp32.ino && echo "board=$b" >> "$GITHUB_OUTPUT" || true
-          done
-          for r in RevB RevDE; do
-            defined "$r" firmware/src/OpenCat.h && echo "rev=$r" >> "$GITHUB_OUTPUT" || true
-          done
-          echo "submodule=$(git -C firmware rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "fw_date=$(sed -n 's/^#define DATE "\([0-9]*\)".*/\1/p' firmware/src/OpenCat.h)" >> "$GITHUB_OUTPUT"
+        run: python3 tools/firmware_target.py --github-output >> "$GITHUB_OUTPUT"
 
       # arduino-cli emits three binaries that must be flashed together, at three offsets,
       # under a partition scheme (huge_app) that is NOT the ESP32 default. Publishing only
@@ -115,7 +99,21 @@ jobs:
             0x10000 OpenCatEsp32.ino.bin
 
           md5sum "$OUT" | tee "$OUT.md5"
+
+          # Machine-readable target, so tools/flash_firmware.py can gate a DOWNLOADED
+          # image with no repo checkout. The filename encodes board and revision too, but
+          # parsing a filename is fragile and says nothing about the md5.
+          SIDECAR="${OUT%.bin}.json"
+          python3 "$GITHUB_WORKSPACE/tools/firmware_target.py" \
+            --tree "$GITHUB_WORKSPACE/firmware" \
+            --extra "tag=$VERSION" \
+            --extra "asset=$OUT" \
+            --extra "md5=$(md5sum "$OUT" | cut -d' ' -f1)" \
+            --extra "bytes=$(wc -c < "$OUT")" > "$SIDECAR"
+          cat "$SIDECAR"
+
           {
+            echo "sidecar=build/firmware/patched/bin/$SIDECAR"
             echo "version=$VERSION"
             echo "asset=$OUT"
             echo "image=build/firmware/patched/bin/$OUT"
@@ -129,6 +127,7 @@ jobs:
           path: |
             build/firmware/patched/bin/bittle-rl-*.bin
             build/firmware/patched/bin/bittle-rl-*.bin.md5
+            build/firmware/patched/bin/bittle-rl-*.json
 
       - name: Publish release
         if: github.ref_type == 'tag'
@@ -179,10 +178,11 @@ jobs:
             # release invisible.
             gh release edit "${GITHUB_REF_NAME}" --draft=false \
               --title "Firmware ${GITHUB_REF_NAME}" --notes-file notes.md
-            gh release upload "${GITHUB_REF_NAME}" "$IMG" "$IMG.md5" --clobber
+            gh release upload "${GITHUB_REF_NAME}" "$IMG" "$IMG.md5" \
+              "${{ steps.merge.outputs.sidecar }}" --clobber
           else
             gh release create "${GITHUB_REF_NAME}" \
               --title "Firmware ${GITHUB_REF_NAME}" \
               --notes-file notes.md \
-              "$IMG" "$IMG.md5"
+              "$IMG" "$IMG.md5" "${{ steps.merge.outputs.sidecar }}"
           fi

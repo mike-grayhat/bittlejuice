@@ -24,6 +24,7 @@ class Capabilities:
     firmware: str | None = None
     board_is_esp32: bool | None = None
     board_code: str | None = None      # "B" = BiBoard/ESP32, "N" = NyBoard/AVR
+    board_variant: str | None = None   # the full token: "B10" = BiBoard V1.0, "B01"/"B02" = V0.x
     build_date: str | None = None
 
     imu_chip: str | None = None            # "ICM" (ICM42670) or "MCU" (MPU6050)
@@ -93,6 +94,12 @@ def run(link, recorder, seconds=4.0):
             m = re.fullmatch(r"([A-Za-z]+)\d*_(\d{6})", tok)
             if m:
                 caps.board_code, caps.build_date = m.group(1).upper(), m.group(2)
+                # The digits are the BiBoard revision (OpenCat.h: B01/B02/B10), and they
+                # decide which PWM_pin[] table a build must use -- so an image for the
+                # wrong one drives the wrong servos. board_code keeps its old letters-only
+                # meaning; the full token gets its own field so existing capabilities.json
+                # captures do not change meaning under a reader.
+                caps.board_variant = m.group(0).split("_")[0].upper()
                 caps.board_is_esp32 = caps.board_code.startswith("B")
                 break
         if caps.board_is_esp32 is False:
@@ -104,7 +111,8 @@ def run(link, recorder, seconds=4.0):
         caps.notes.append("no reply to `?` -- board identity unconfirmed")
 
     caps.voltage = link.voltage()
-    print(f"  firmware : {caps.firmware or '(no reply)'}")
+    print(f"  firmware : {caps.firmware or '(no reply)'}"
+          f"{f'  (board {caps.board_variant})' if caps.board_variant else ''}")
     print(f"  voltage  : {caps.voltage if caps.voltage is not None else '(no reply)'}")
 
     # -- IMU ---------------------------------------------------------------

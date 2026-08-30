@@ -82,20 +82,58 @@ scan), and so are the optional peripheral modules. You do not need to match thos
 
 ### Flash it
 
-Per-robot servo calibration and IMU offsets live in the `nvs` partition (`0x9000`, size
-`0x5000`), which this image does not move — so a normal flash preserves them.
-
-> **Do not run `esptool erase_flash`.** It is the most common piece of flashing advice on the
-> internet and it wipes `nvs`, destroying your robot's factory servo calibration. Nothing here
-> needs it. The single merged image below is exactly why: there are no offsets to get wrong,
-> so there is no reason to reach for a wipe.
+Download the `.bin` **and the `.json` beside it**, then:
 
 ```bash
 pip install 'esptool<5'      # 5.x drops the esptool.py entry point
-esptool.py --chip esp32 --port /dev/ttyUSB0 write_flash 0x0 bittle-rl-<version>.bin
+uv run python tools/flash_firmware.py --port $PORT --image bittle-rl-<version>-....bin
 ```
 
-Check the image's md5 against the one in the release notes before flashing.
+This is the recommended path because it refuses to flash the wrong robot. Before writing
+anything it asks the board what it is, over serial, and compares against the `.json`:
+
+| checked | how | if it disagrees |
+|---|---|---|
+| **model** (`Bittle X`, `Nybble Q`, …) | printed in the `?` reply | refuses |
+| **board** (`B01` / `B02` / `B10`) | printed in the `?` reply | refuses |
+| md5 of the download | the sidecar | refuses |
+| **revision** (RevB / RevDE) | *not readable* — see below | warns *after* flashing |
+
+It then dumps the **entire 4 MB flash** to `backups/` before writing a byte, flashes with
+`write_flash 0x0` (never `erase_flash`), and re-reads the board to confirm the build date
+changed and the battery voltage is still plausible. Restore is one command, printed at the
+end:
+
+```bash
+uv run python tools/flash_firmware.py --port $PORT --restore backups/<stamp>.bin
+```
+
+`--force` overrides a refusal, `--no-backup` skips the dump, and `--dry-run` runs the checks
+and stops. All three are for people who have read this section.
+
+**The one thing it cannot check before writing is the board revision.** `RevB` vs `RevDE` is
+never printed by the firmware; it only selects which analog pin reads the battery. So a
+mismatch shows up *after* flashing, as a nonsense voltage — which is exactly what the
+post-flash check looks for and shouts about.
+
+> **Never run `esptool erase_flash`.** It is the most common piece of flashing advice on the
+> internet and it wipes `nvs` (`0x9000`, size `0x5000`), destroying your robot's factory
+> servo calibration and IMU offsets. Those are per-robot, set at the factory, and **not
+> reproducible at home** — it is the only genuinely unrecoverable mistake on this page. The
+> merged image does not move that partition, so a normal `write_flash` preserves it and
+> there is no reason to reach for a wipe.
+
+#### Flashing by hand
+
+If you would rather not use the tool, the write it performs is just:
+
+```bash
+esptool.py --chip esp32 --port $PORT read_flash 0 0x400000 backup.bin   # do this first
+esptool.py --chip esp32 --port $PORT write_flash 0x0 bittle-rl-<version>-....bin
+```
+
+Check the image's md5 against the one in the release notes before flashing, and check the
+board/revision table above yourself — by hand, nothing is gating you.
 
 ### First boot blocks on a prompt
 

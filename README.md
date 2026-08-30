@@ -113,8 +113,10 @@ A prebuilt image is on the
 [releases page](https://github.com/mike-grayhat/bittlejuice/releases), built by CI from the
 pinned submodule and published with the robot, board and revision it was compiled for — it is
 **Bittle X / BiBoard V1.0 / Rev D/E only**, and those are compile-time choices, so a different
-board needs its own build. Both paths, and how to tell which you need:
-**[docs/firmware.md](docs/firmware.md)**.
+board needs its own build. `tools/flash_firmware.py` checks that for you — it asks the robot
+what it is before writing anything, refuses a mismatch, and dumps the whole flash to
+`backups/` first so a bad flash is one command to undo. Both paths, and how to tell which you
+need: **[docs/firmware.md](docs/firmware.md)**.
 
 **2. Bring it up in stages, off the ground first.** The order matters and every stage is a
 gate. Full detail in [deploy/README.md](deploy/README.md).

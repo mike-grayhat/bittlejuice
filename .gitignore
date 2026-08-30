@@ -40,6 +40,11 @@ __pycache__/
 gait.mp4
 gait_compare.mp4
 
+# Flash dumps written by tools/flash_firmware.py before every flash: 4 MB each, and they
+# contain THIS robot's factory servo calibration -- machine-specific, not repo content.
+# Keep them; they are the only byte-exact rollback (docs/reflashing.md). Just do not commit.
+backups/
+
 # The long-form field guide. Written, but not published yet -- it is candid about failures and
 # wrong turns, and that is a deliberate decision to make once rather than by accident. Nothing
 # tracked links to it, so removing this line is all it takes to ship it.
