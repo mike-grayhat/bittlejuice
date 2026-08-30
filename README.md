@@ -2,7 +2,8 @@
 
 A complete pipeline for training a walking policy in MuJoCo and running it on a real
 [Petoi Bittle X](https://www.petoi.com/) at 50 Hz: the simulation, the measured plant model,
-the firmware patches that make the robot fast enough to close a loop around, and a separate runtime.
+the firmware patches that cut command→motion latency from 198 ms to 54 ms, and a separate
+runtime.
 
 A trained policy ships with the repo, so you can go from a boxed robot to a walking one
 without training anything — and you can watch that policy walk in simulation in about three
@@ -11,7 +12,7 @@ minutes, with no robot at all.
 ![The shipped policy in MuJoCo and on a Bittle X](docs/media/gait.gif)
 
 *One policy, one 0.10 m/s command, both sides: the gait it was trained to walk in
-simulation, and that same policy closing the loop on the robot at 50 Hz.*
+simulation, and that same policy running on the robot at 50 Hz.*
 
 ## Watch it walk first (no robot needed)
 
@@ -43,6 +44,20 @@ uv run python tools/mj_deployability.py -e shipped  # will this gait survive rea
 The second one is the gate that decides whether a policy transfers at all. The shipped policy
 reads 2.6% slew saturation against a 15% threshold — see [docs/training.md](docs/training.md)
 for why that number, and not the reward curve, is the one that matters.
+
+**One thing to know up front: it walks open-loop.** Blindfold the policy — replace both IMU
+channels with a constant "upright and still" — and it barely notices. It loses 1.1% of its
+speed, and 0.2% on a 4° slope, which is the condition designed to catch a policy that reads
+gravity. The loop is closed in the plumbing and not in the policy: the robot is running a
+learned rhythm more than it is reacting to anything.
+
+```bash
+uv run python tools/blindfold_test.py -e shipped    # check it yourself
+```
+
+That is an open problem here, not a solved one. [docs/training.md](docs/training.md) has what
+was tried, why it did not work, and the most likely reason — the policy almost never falls, so
+nothing ever selects for recovery.
 
 ## Ways in, in increasing order of effort
 

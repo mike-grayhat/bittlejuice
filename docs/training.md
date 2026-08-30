@@ -99,10 +99,24 @@ uv run python tools/blindfold_test.py -e my-run       # does it use its IMU at a
 uv run python tools/obs_diff.py -e my-run --hw hw_obs.csv   # does sim match the robot?
 ```
 
-`blindfold_test` is worth running early. Replace the IMU channels with a constant "upright
-and still" and a policy trained the obvious way loses almost nothing — it is an open-loop
-rhythm generator. Making feedback *necessary* takes a high termination threshold, angular
-pushes, uneven ground and a randomised initial attitude, all of which are in the recipe above.
+`blindfold_test` is worth running early, and you should expect it to fail. Replace the IMU
+channels with a constant "upright and still" and a policy trained the obvious way loses almost
+nothing — it is an open-loop rhythm generator.
+
+The high termination threshold, angular pushes, uneven ground and randomised initial attitude
+in the recipe above are all aimed at making feedback *necessary*. **Measured, they do not
+achieve it.** The shipped policy pays 1.1% to lose both real sensors, and 0.2% on a 4° slope —
+the condition designed to discriminate, because slope tilts gravity and so is genuinely in the
+observation. It walks well and it is still a rhythm generator.
+
+The test also reports why, and it is sharper than "the policy is lazy": **survival is too
+high.** The robot almost never falls, so there is nothing to recover from, so nothing selects
+for recovery no matter what the sensor carries. Raising the termination threshold removed the
+*failures* without supplying a *reason to correct*. Disturbances would have to genuinely
+threaten an episode before feedback is being asked for at all.
+
+This is an open problem, not a solved one. Do not read a good gait as evidence the loop is
+closed.
 
 ## Command ranges
 

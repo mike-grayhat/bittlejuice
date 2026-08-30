@@ -40,5 +40,10 @@ __pycache__/
 gait.mp4
 gait_compare.mp4
 
+# The long-form field guide. Written, but not published yet -- it is candid about failures and
+# wrong turns, and that is a deliberate decision to make once rather than by accident. Nothing
+# tracked links to it, so removing this line is all it takes to ship it.
+docs/detailed/
+
 # Scratch folder of crop options for the README gif; delete once one is chosen.
 gait_options/
