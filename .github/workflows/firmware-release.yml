@@ -161,8 +161,25 @@ jobs:
           \`nvs\` partition holding your robot's factory servo calibration. A normal flash
           preserves it.
           EOF
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "Firmware ${GITHUB_REF_NAME}" \
-            --notes-file notes.md \
-            "${{ steps.merge.outputs.image }}" \
-            "${{ steps.merge.outputs.image }}.md5"
+          # Idempotent: re-running a tag build must not fail because the release exists.
+          # --clobber replaces an asset of the same name; assets whose names changed are
+          # removed first so a release never carries two differently-named copies of the
+          # same image.
+          IMG="${{ steps.merge.outputs.image }}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            for old in $(gh release view "${GITHUB_REF_NAME}" \
+                           --json assets --jq '.assets[].name'); do
+              case "$old" in
+                "${{ steps.merge.outputs.asset }}"|"${{ steps.merge.outputs.asset }}.md5") ;;
+                *) gh release delete-asset "${GITHUB_REF_NAME}" "$old" --yes ;;
+              esac
+            done
+            gh release edit "${GITHUB_REF_NAME}" \
+              --title "Firmware ${GITHUB_REF_NAME}" --notes-file notes.md
+            gh release upload "${GITHUB_REF_NAME}" "$IMG" "$IMG.md5" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "Firmware ${GITHUB_REF_NAME}" \
+              --notes-file notes.md \
+              "$IMG" "$IMG.md5"
+          fi
