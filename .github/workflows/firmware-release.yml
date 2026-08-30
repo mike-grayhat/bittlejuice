@@ -174,7 +174,10 @@ jobs:
                 *) gh release delete-asset "${GITHUB_REF_NAME}" "$old" --yes ;;
               esac
             done
-            gh release edit "${GITHUB_REF_NAME}" \
+            # --draft=false is not redundant: deleting a tag to move it demotes its
+            # release to a draft, and `edit` alone would leave it there -- assets updated,
+            # release invisible.
+            gh release edit "${GITHUB_REF_NAME}" --draft=false \
               --title "Firmware ${GITHUB_REF_NAME}" --notes-file notes.md
             gh release upload "${GITHUB_REF_NAME}" "$IMG" "$IMG.md5" --clobber
           else
