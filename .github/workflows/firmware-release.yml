@@ -32,9 +32,12 @@ jobs:
 
       - name: Install arduino-cli
         run: |
+          # The install script refuses to create BINDIR itself.
+          mkdir -p "$HOME/.local/bin"
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
             | BINDIR="$HOME/.local/bin" sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/arduino-cli" version
 
       # Core 2.x, NOT 3.x: src/PetoiESP32Servo calls ledcSetup()/ledcAttachPin(), which core
       # 3.0 removed. The version is pinned in build_firmware.sh and checked by it.
