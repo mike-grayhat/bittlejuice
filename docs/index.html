@@ -139,7 +139,7 @@ section+section{border-top:1px solid var(--seam)}
 
 /* ---------- code ---------- */
 .term{border:1px solid var(--seam);background:var(--plate);border-radius:2px;overflow:hidden}
-.term+.term{margin-top:16px}
+.term:not(:first-child){margin-top:16px}
 .term-bar{display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--plate-2);border-bottom:1px solid var(--seam);font-family:var(--f-mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--zinc-dim)}
 .term-bar .tag{color:var(--zinc)}
 .copy{margin-left:auto;font-family:var(--f-mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--zinc);background:transparent;border:1px solid var(--seam-hi);border-radius:2px;padding:4px 10px;cursor:pointer;transition:color .15s,border-color .15s}
