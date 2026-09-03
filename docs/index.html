@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BittleJuice</title>
+<meta name="description" content="A complete pipeline for training a walking policy in MuJoCo and running it on a real Petoi Bittle X at 50 Hz — simulation, measured plant model, firmware patches and robot runtime.">
+<meta property="og:title" content="BittleJuice">
+<meta property="og:description" content="Reinforcement learning on a Petoi Bittle X: MuJoCo to metal at 50 Hz.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Oswald:wght@500;600;700&display=swap">
+<style>
+:root{
+  --ink:#0C0D0E;
+  --plate:#151719;
+  --plate-2:#1C1F22;
+  --seam:#2B2F33;
+  --seam-hi:#3C4247;
+  --chalk:#EAE7E1;
+  --zinc:#979CA1;
+  --zinc-dim:#6B7175;
+  --safety:#FF6A13;
+  --safety-dim:#C8500D;
+  --safety-wash:#2A1508;
+  --oxide:#A8382C;
+  --oxide-lit:#D9503F;
+  --oxide-wash:#22110E;
+  --f-display:"Oswald","Haettenschweiler","Arial Narrow",sans-serif;
+  --f-body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --pad:clamp(20px,4vw,32px);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--ink);
+  color:var(--chalk);
+  font-family:var(--f-body);
+  font-size:16px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *{animation:none!important;transition:none!important}
+}
+a{color:var(--safety);text-decoration:none;border-bottom:1px solid rgba(255,106,19,.32)}
+a:hover{border-bottom-color:var(--safety)}
+:focus-visible{outline:2px solid var(--safety);outline-offset:3px}
+img{max-width:100%;display:block}
+h1,h2,h3{font-family:var(--f-display);text-transform:uppercase;font-weight:700;text-wrap:balance;margin:0}
+p{margin:0}
+code,kbd{font-family:var(--f-mono)}
+
+.wrap{width:100%;max-width:1120px;margin:0 auto;padding-inline:var(--pad)}
+.hazard{height:6px;background:repeating-linear-gradient(115deg,var(--safety) 0 14px,#0C0D0E 14px 28px)}
+
+/* ---------- masthead ---------- */
+.masthead{position:sticky;top:0;z-index:50;background:rgba(12,13,14,.93);backdrop-filter:blur(6px);border-bottom:1px solid var(--seam)}
+.masthead .wrap{display:flex;align-items:center;gap:28px;height:62px}
+.mark{display:flex;align-items:baseline;gap:9px;font-family:var(--f-display);font-weight:700;font-size:20px;letter-spacing:.08em;color:var(--chalk);border:0}
+.mark .bolt{width:11px;height:11px;background:var(--safety);transform:translateY(-1px)}
+.mark:hover{color:var(--safety)}
+.nav{margin-left:auto;display:flex;gap:22px;align-items:center}
+.nav a{font-family:var(--f-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--zinc);border:0;padding:4px 0;border-bottom:1px solid transparent}
+.nav a:hover{color:var(--chalk);border-bottom-color:var(--safety)}
+.nav .repo{color:var(--chalk);border:1px solid var(--seam-hi);padding:7px 13px;background:var(--plate-2)}
+.nav .repo:hover{border-color:var(--safety);color:var(--safety)}
+@media(max-width:820px){.nav a:not(.repo){display:none}}
+
+/* ---------- hero ---------- */
+.hero{
+  border-bottom:1px solid var(--seam);
+  background:
+    radial-gradient(120% 90% at 12% 0%,rgba(255,106,19,.09) 0%,rgba(12,13,14,0) 58%),
+    radial-gradient(80% 70% at 100% 10%,rgba(168,56,44,.13) 0%,rgba(12,13,14,0) 60%),
+    linear-gradient(180deg,#111315 0%,var(--ink) 100%);
+  position:relative;overflow:hidden;
+}
+.hero::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(rgba(255,255,255,.055) 1px,transparent 1px);
+  background-size:22px 22px;mask-image:linear-gradient(180deg,#000,transparent 72%);
+}
+.hero .wrap{position:relative;z-index:1;padding-block:clamp(46px,7vw,78px) clamp(34px,5vw,52px)}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--safety);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.eyebrow::before{content:"";width:26px;height:2px;background:var(--safety)}
+h1{font-size:clamp(56px,11.5vw,124px);line-height:.88;letter-spacing:-.005em;margin:18px 0 0}
+h1 .juice{color:var(--safety)}
+.tagline{font-family:var(--f-display);font-weight:500;text-transform:uppercase;letter-spacing:.16em;font-size:clamp(13px,2.1vw,17px);color:var(--zinc);margin-top:16px}
+.lede{max-width:64ch;margin-top:22px;font-size:17.5px;color:#C9C6C1}
+.lede strong{color:var(--chalk);font-weight:600}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.btn{font-family:var(--f-display);text-transform:uppercase;letter-spacing:.1em;font-weight:600;font-size:14px;padding:13px 22px;border:1px solid var(--seam-hi);color:var(--chalk);background:var(--plate-2);border-radius:2px;display:inline-flex;align-items:center;gap:10px;transition:background .15s,border-color .15s,color .15s}
+.btn:hover{border-color:var(--seam-hi);background:#23272A}
+.btn-primary{background:var(--safety);border-color:var(--safety);color:#140A03}
+.btn-primary:hover{background:#FF7E33;border-color:#FF7E33;color:#140A03}
+.btn .arrow{font-family:var(--f-mono);font-size:13px}
+
+/* ---------- gait strip ---------- */
+.gait{margin-top:clamp(34px,5vw,52px);border:1px solid var(--seam);background:var(--plate);border-radius:2px}
+.gait-bar{display:flex;align-items:center;gap:14px;padding:9px 14px;border-bottom:1px solid var(--seam);font-family:var(--f-mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--zinc-dim);flex-wrap:wrap}
+.gait-bar .live{color:var(--safety);display:flex;align-items:center;gap:7px}
+.gait-bar .live::before{content:"";width:7px;height:7px;background:var(--safety);border-radius:50%}
+.gait-bar .sep{color:var(--seam-hi)}
+.gait figure{margin:0;padding:14px}
+.gait img{width:100%;height:auto;image-rendering:auto;border:1px solid var(--seam)}
+.gait figcaption{padding:12px 1px 1px;font-size:13.5px;color:var(--zinc);max-width:78ch}
+
+/* ---------- spec rail ---------- */
+.specs{border-top:1px solid var(--seam);border-bottom:1px solid var(--seam);background:var(--plate)}
+.specs .wrap{display:grid;grid-template-columns:repeat(5,1fr);padding-inline:0}
+.spec{padding:22px var(--pad);border-right:1px solid var(--seam)}
+.spec:last-child{border-right:0}
+.spec .val{font-family:var(--f-mono);font-weight:500;font-size:clamp(22px,2.6vw,30px);letter-spacing:-.02em;color:var(--chalk);font-variant-numeric:tabular-nums;line-height:1.1}
+.spec .val u{text-decoration:none;color:var(--safety)}
+.spec .key{font-family:var(--f-mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--zinc-dim);margin-top:8px}
+.spec .was{font-size:12.5px;color:var(--zinc-dim);margin-top:3px}
+.spec .was s{color:var(--oxide-lit);text-decoration-thickness:1px}
+@media(max-width:900px){
+  .specs .wrap{grid-template-columns:repeat(2,1fr)}
+  .spec{border-bottom:1px solid var(--seam)}
+  .spec:nth-child(2n){border-right:0}
+  .spec:last-child{grid-column:1/-1;border-bottom:0}
+}
+
+/* ---------- sections ---------- */
+section{padding-block:clamp(52px,7vw,86px)}
+section+section{border-top:1px solid var(--seam)}
+.head{display:flex;align-items:center;gap:14px;margin-bottom:10px}
+.head::before{content:"";width:10px;height:10px;background:var(--safety);flex:0 0 auto}
+.head h2{font-size:clamp(24px,3.4vw,34px);letter-spacing:.02em}
+.head::after{content:"";height:1px;background:var(--seam);flex:1}
+.sub{color:var(--zinc);max-width:70ch;margin-bottom:34px;font-size:16.5px}
+.sub a{border-bottom-color:rgba(255,106,19,.4)}
+
+/* ---------- code ---------- */
+.term{border:1px solid var(--seam);background:var(--plate);border-radius:2px;overflow:hidden}
+.term+.term{margin-top:16px}
+.term-bar{display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--plate-2);border-bottom:1px solid var(--seam);font-family:var(--f-mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--zinc-dim)}
+.term-bar .tag{color:var(--zinc)}
+.copy{margin-left:auto;font-family:var(--f-mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--zinc);background:transparent;border:1px solid var(--seam-hi);border-radius:2px;padding:4px 10px;cursor:pointer;transition:color .15s,border-color .15s}
+.copy:hover{color:var(--safety);border-color:var(--safety)}
+.copy[data-done="1"]{color:var(--safety);border-color:var(--safety)}
+.term pre{margin:0;padding:16px;overflow-x:auto;font-family:var(--f-mono);font-size:13.5px;line-height:1.75;color:#D3D0CB}
+.term pre .p{color:var(--safety);user-select:none}
+.term pre .c{color:var(--zinc-dim)}
+.note{margin-top:14px;font-size:14px;color:var(--zinc);max-width:72ch}
+
+.col{max-width:920px}
+.two{display:grid;grid-template-columns:1.15fr .85fr;gap:clamp(20px,3vw,34px);align-items:start}
+@media(max-width:880px){.two{grid-template-columns:1fr}}
+
+/* ---------- tier table ---------- */
+.tiers{border:1px solid var(--seam);border-radius:2px;overflow:hidden}
+.tier{display:grid;grid-template-columns:64px 1.1fr 1.5fr 150px;gap:0;border-bottom:1px solid var(--seam);background:var(--plate)}
+.tier:last-child{border-bottom:0}
+.tier:hover{background:var(--plate-2)}
+.tier>*{padding:18px 16px}
+.tier .idx{font-family:var(--f-mono);font-size:13px;color:var(--safety);border-right:1px solid var(--seam);font-variant-numeric:tabular-nums}
+.tier .get{font-family:var(--f-display);text-transform:uppercase;letter-spacing:.05em;font-weight:600;font-size:17px}
+.tier .need{color:var(--zinc);font-size:14.5px}
+.tier .time{font-family:var(--f-mono);font-size:13px;color:var(--chalk);text-align:right;border-left:1px solid var(--seam);white-space:nowrap}
+.tier-head{display:grid;grid-template-columns:64px 1.1fr 1.5fr 150px;background:var(--plate-2);border-bottom:1px solid var(--seam);font-family:var(--f-mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--zinc-dim)}
+.tier-head>*{padding:10px 16px}
+.tier-head .t4{text-align:right}
+@media(max-width:820px){
+  .tier-head{display:none}
+  .tier{grid-template-columns:52px 1fr}
+  .tier .idx{grid-row:1/3;border-right:1px solid var(--seam)}
+  .tier .need{grid-column:2;padding-top:0}
+  .tier .time{grid-column:2;text-align:left;border-left:0;border-top:1px solid var(--seam);padding-top:10px}
+}
+
+/* ---------- nameplate ---------- */
+.nameplate{border-bottom:1px solid var(--seam);background:linear-gradient(180deg,#1A1D20,#141618)}
+.nameplate .wrap{padding-block:clamp(30px,4vw,44px)}
+.plate{border:1px solid var(--seam-hi);border-radius:2px;background:var(--plate);overflow:hidden}
+.plate-bar{position:relative;padding:13px 44px;border-bottom:1px solid var(--seam-hi);background:linear-gradient(180deg,#23272A,#1A1D20);display:flex;justify-content:center;align-items:center;gap:14px}
+.plate-bar h3{font-size:13.5px;letter-spacing:.28em;color:var(--chalk)}
+.plate-bar::before,.plate-bar::after{content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:#0A0B0C;box-shadow:inset 0 1px 1px rgba(255,255,255,.22),0 1px 0 rgba(255,255,255,.05);top:50%;margin-top:-3.5px}
+.plate-bar::before{left:16px}
+.plate-bar::after{right:16px}
+.plate dl{margin:0;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--seam)}
+.plate .row{background:var(--plate);padding:16px 20px;display:flex;flex-direction:column;gap:7px;min-height:96px}
+.plate dt{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--safety)}
+.plate dd{margin:0;font-family:var(--f-mono);font-size:13.5px;line-height:1.5;color:var(--chalk)}
+.plate .foot{border-top:1px solid var(--seam-hi);padding:12px 20px;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--zinc-dim);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+@media(max-width:900px){.plate dl{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.plate dl{grid-template-columns:1fr}.plate .row{min-height:0}}
+
+/* ---------- figure sheets ---------- */
+.numbers{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--seam);border:1px solid var(--seam);border-radius:2px;margin-bottom:30px}
+.num{background:var(--plate);padding:18px 20px}
+.num .n{font-family:var(--f-mono);font-size:clamp(19px,2.2vw,24px);color:var(--chalk);font-variant-numeric:tabular-nums;line-height:1.15}
+.num .n em{font-style:normal;color:var(--safety)}
+.num .l{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--zinc-dim);margin-top:9px}
+@media(max-width:820px){.numbers{grid-template-columns:repeat(2,1fr)}}
+.sheets{display:grid;gap:20px}
+.sheet{margin:0;border:1px solid var(--seam);background:var(--plate);border-radius:2px;overflow:hidden}
+.sheet-bar{display:flex;align-items:center;gap:12px;padding:9px 14px;background:var(--plate-2);border-bottom:1px solid var(--seam);font-family:var(--f-mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--zinc)}
+.sheet-bar .fig{color:var(--safety)}
+.sheet-bar .src{margin-left:auto;color:var(--zinc-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.paper{background:#F4F2ED;padding:clamp(10px,1.6vw,18px)}
+.paper img{width:100%;height:auto}
+.sheet figcaption{padding:14px 16px;border-top:1px solid var(--seam);font-size:14px;line-height:1.6;color:var(--zinc);max-width:96ch}
+.sheet figcaption b{color:var(--chalk);font-weight:600}
+
+/* ---------- constraints ---------- */
+.constraints{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--seam);border:1px solid var(--seam);border-radius:2px}
+@media(max-width:980px){.constraints{grid-template-columns:1fr}}
+.con{background:var(--plate);padding:22px}
+.con .fig{font-family:var(--f-mono);font-weight:500;font-size:26px;color:var(--safety);font-variant-numeric:tabular-nums;line-height:1}
+.con .fig small{font-size:13px;color:var(--zinc-dim);letter-spacing:.08em;text-transform:uppercase;display:block;margin-top:7px}
+.con h3{font-size:18px;letter-spacing:.04em;margin:16px 0 8px}
+.con p{font-size:14.5px;color:var(--zinc)}
+.con p+p{margin-top:9px}
+.con code{color:#C9C6C1;font-size:13px}
+
+/* ---------- warning ---------- */
+.warn{border:1px solid var(--oxide);background:linear-gradient(180deg,var(--oxide-wash),var(--plate));border-radius:2px;overflow:hidden}
+.warn-stripe{height:6px;background:repeating-linear-gradient(115deg,var(--oxide) 0 14px,#160C0A 14px 28px)}
+.warn-body{padding:clamp(22px,3vw,30px)}
+.warn .tag{font-family:var(--f-mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--oxide-lit)}
+.warn h2{font-size:clamp(21px,2.8vw,28px);margin:12px 0 14px;letter-spacing:.02em}
+.warn p{color:#C4BFBB;max-width:74ch;font-size:15.5px}
+.warn p+p{margin-top:12px}
+.warn .term{margin-top:20px;border-color:#3A2320;background:#120C0B}
+.warn .term-bar{background:#1A100E;border-bottom-color:#3A2320}
+.warn .term pre .p{color:var(--oxide-lit)}
+.deltas{display:flex;flex-wrap:wrap;gap:26px;margin-top:20px;padding-top:18px;border-top:1px solid #3A2320}
+.delta .n{font-family:var(--f-mono);font-size:22px;color:var(--chalk);font-variant-numeric:tabular-nums}
+.delta .l{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--zinc-dim);margin-top:5px}
+
+/* ---------- bring-up ladder ---------- */
+.ladder{display:grid;gap:1px;background:var(--seam);border:1px solid var(--seam);border-radius:2px}
+.rung{background:var(--plate);display:grid;grid-template-columns:44px 1fr;gap:18px;padding:18px 20px;align-items:start}
+.rung .step{font-family:var(--f-mono);font-size:13px;color:var(--safety);border:1px solid var(--seam-hi);width:34px;height:34px;display:grid;place-items:center;border-radius:2px;background:var(--plate-2)}
+.rung h3{font-size:16.5px;letter-spacing:.04em;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.chip{font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:3px 8px;border-radius:2px;border:1px solid var(--seam-hi);color:var(--zinc);background:var(--plate-2)}
+.chip.air{color:var(--safety);border-color:var(--safety-dim);background:var(--safety-wash)}
+.chip.floor{color:var(--oxide-lit);border-color:var(--oxide);background:var(--oxide-wash)}
+.rung p{font-size:14.5px;color:var(--zinc);margin-top:7px}
+.rung code{display:block;font-size:12.5px;color:#CFCCC7;margin-top:9px;overflow-x:auto;white-space:pre;padding-bottom:2px}
+.rung code .p{color:var(--safety)}
+
+/* ---------- tree + docs ---------- */
+.tree{border:1px solid var(--seam);background:var(--plate);border-radius:2px;padding:18px;overflow-x:auto}
+.tree pre{margin:0;font-family:var(--f-mono);font-size:13px;line-height:1.85;color:var(--zinc)}
+.tree pre b{color:var(--chalk);font-weight:500}
+.tree pre i{color:var(--zinc-dim);font-style:normal}
+.docs{display:grid;gap:1px;background:var(--seam);border:1px solid var(--seam);border-radius:2px}
+.doc{background:var(--plate);display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;padding:14px 18px;border:0;color:var(--chalk);transition:background .15s}
+.doc:hover{background:var(--plate-2);color:var(--chalk)}
+.doc .want{font-size:14.5px;color:var(--zinc)}
+.doc:hover .want{color:var(--chalk)}
+.doc .file{font-family:var(--f-mono);font-size:12.5px;color:var(--safety);white-space:nowrap}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--seam);background:var(--plate);padding-block:44px;font-size:14px;color:var(--zinc)}
+footer .cols{display:grid;grid-template-columns:1.2fr 1fr;gap:34px}
+@media(max-width:820px){footer .cols{grid-template-columns:1fr}}
+footer h4{font-family:var(--f-display);text-transform:uppercase;letter-spacing:.16em;font-size:12px;color:var(--zinc-dim);margin:0 0 12px;font-weight:600}
+footer p+p{margin-top:10px}
+footer .stamp{margin-top:32px;padding-top:18px;border-top:1px solid var(--seam);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--zinc-dim)}
+</style>
+</head>
+<body>
+<div class="hazard"></div>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="mark" href="#top"><span class="bolt"></span>BittleJuice</a>
+    <nav class="nav">
+      <a href="#watch">Watch it walk</a>
+      <a href="#ways">Ways in</a>
+      <a href="#robot">The robot</a>
+      <a href="#clock">The clock</a>
+      <a href="#bringup">Bring-up</a>
+      <a href="#docs">Docs</a>
+      <a class="repo" href="https://github.com/mike-grayhat/bittlejuice">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero" id="top">
+  <div class="wrap">
+    <div class="eyebrow">Petoi Bittle X &middot; MuJoCo &rarr; metal</div>
+    <h1>Bittle<span class="juice">Juice</span></h1>
+    <div class="tagline">Reinforcement learning on a robot that cannot feel its own legs</div>
+    <p class="lede">A complete pipeline for training a walking policy in MuJoCo and running it on a real
+      Petoi Bittle X at <strong>50 Hz</strong>: the simulation, the measured plant model, the firmware
+      patches that cut command&rarr;motion latency from 198 ms to 54 ms, and a separate runtime that
+      needs nothing but numpy and pyserial. <strong>A trained policy ships with the repo</strong> — you
+      can watch it walk in about three minutes, with no robot at all.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#watch">Watch it walk <span class="arrow">&rarr;</span></a>
+      <a class="btn" href="https://github.com/mike-grayhat/bittlejuice">Source on GitHub</a>
+      <a class="btn" href="https://github.com/mike-grayhat/bittlejuice/releases">Firmware release</a>
+    </div>
+
+    <div class="gait">
+      <div class="gait-bar">
+        <span class="live">Shipped policy</span>
+        <span class="sep">/</span><span>cmd 0.10 m/s</span>
+        <span class="sep">/</span><span>left: MuJoCo</span>
+        <span class="sep">/</span><span>right: Bittle X @ 50 Hz</span>
+      </div>
+      <figure>
+        <img src="media/gait.gif" alt="The shipped policy walking in MuJoCo on the left and on a real Bittle X on the right" width="640" height="205">
+        <figcaption>One policy, one 0.10 m/s command, both sides: the gait it was trained to walk in
+          simulation, and that same policy running on the robot.</figcaption>
+      </figure>
+    </div>
+  </div>
+</div>
+
+<div class="specs">
+  <div class="wrap">
+    <div class="spec">
+      <div class="val">50 Hz</div>
+      <div class="key">Control loop</div>
+      <div class="was">20 ms per tick, on the robot</div>
+    </div>
+    <div class="spec">
+      <div class="val"><u>54 ms</u></div>
+      <div class="key">Command &rarr; motion</div>
+      <div class="was"><s>198 ms</s> on stock firmware</div>
+    </div>
+    <div class="spec">
+      <div class="val">0.097 m/s</div>
+      <div class="key">Measured walk</div>
+      <div class="was">against 0.100 commanded</div>
+    </div>
+    <div class="spec">
+      <div class="val">2.6 %</div>
+      <div class="key">Slew saturation</div>
+      <div class="was">transfer gate sits at 15 %</div>
+    </div>
+    <div class="spec">
+      <div class="val">250 Hz</div>
+      <div class="key">IMU stream</div>
+      <div class="was"><s>5 Hz</s> before the patch</div>
+    </div>
+  </div>
+</div>
+
+
+<div class="nameplate">
+  <div class="wrap">
+    <div class="plate">
+      <div class="plate-bar"><h3>Equipment data plate</h3></div>
+      <dl>
+        <div class="row"><dt>Robot</dt><dd>Petoi Bittle X v2<br>alloy-geared servos</dd></div>
+        <div class="row"><dt>Board</dt><dd>BiBoard V1.0 Rev D/E<br>ESP32</dd></div>
+        <div class="row"><dt>Firmware</dt><dd>OpenCatEsp32 fork, B10_251121<br>+ realtime-mode patch</dd></div>
+        <div class="row"><dt>Serial link</dt><dd>115200 baud, ASCII<br>&ge; 20 ms between commands</dd></div>
+        <div class="row"><dt>Servo response</dt><dd>&tau; = 33 ms<br>&le; 137 &deg;/s, measured</dd></div>
+        <div class="row"><dt>Joint feedback</dt><dd>9.25 Hz whole-body<br>estimated, never measured</dd></div>
+        <div class="row"><dt>Policy</dt><dd>PPO, 512 envs, 5000 iters<br>trained at v<sub>x</sub> = 0.10 m/s only</dd></div>
+        <div class="row"><dt>Robot runtime</dt><dd>numpy + pyserial<br>no torch, no mujoco</dd></div>
+      </dl>
+      <div class="foot">
+        <span>Fitted to this hardware &mdash; a different plant needs a refit</span>
+        <span>docs/measuring.md</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section id="watch">
+  <div class="wrap">
+    <div class="head"><h2>Watch it walk first</h2></div>
+    <p class="sub">No robot needed. This is the exact policy in <code>deploy/policy/</code>, running through
+      the exact observation pipeline, action latency and actuator model it was trained against.</p>
+
+    <div class="col">
+      <div class="term">
+        <div class="term-bar"><span class="tag">bash &middot; ~3 minutes</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="p">$</span> git clone --recurse-submodules https://github.com/mike-grayhat/bittlejuice
+<span class="p">$</span> cd bittlejuice
+<span class="p">$</span> curl -LsSf https://astral.sh/uv/install.sh | sh   <span class="c"># if you need uv</span>
+<span class="p">$</span> uv sync
+
+<span class="c"># the shipped policy, in the simulator it was trained in</span>
+<span class="p">$</span> uv run python sim/mj_eval.py -e shipped --video gait.mp4
+<span class="p">$</span> uv run mjpython sim/mj_eval.py -e shipped</pre>
+      </div>
+      <p class="note"><code>--video</code> renders headless and works over SSH. Use <code>mjpython</code> for the
+        interactive viewer on macOS — it ships with the mujoco wheel and is already in <code>.venv/bin</code>;
+        on Linux, plain <code>python</code> opens the viewer.</p>
+
+      <div class="term">
+        <div class="term-bar"><span class="tag">two more worth running</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="p">$</span> uv run pytest                                       <span class="c"># the invariants, ~10 s</span>
+<span class="p">$</span> uv run python tools/mj_deployability.py -e shipped  <span class="c"># will this gait survive real servos?</span></pre>
+      </div>
+      <p class="note">The second is the gate that decides whether a policy transfers at all. The shipped
+        policy reads <strong>2.6 % slew saturation against a 15 % threshold</strong> — see
+        <a href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/training.md">docs/training.md</a>
+        for why that number, and not the reward curve, is the one that matters.</p>
+    </div>
+    </div>
+  </section>
+
+<section id="ways">
+  <div class="wrap">
+    <div class="head"><h2>Ways in</h2></div>
+    <p class="sub">Four entry points, in increasing order of effort. Each one is useful on its own, and each
+      builds on the one above it.</p>
+    <div class="tiers">
+      <div class="tier-head"><div>Tier</div><div>You get</div><div>You need</div><div class="t4">Roughly</div></div>
+      <div class="tier">
+        <div class="idx">00</div>
+        <div class="get">Watch the shipped policy</div>
+        <div class="need">A laptop. No robot, no training, no GPU.</div>
+        <div class="time">3 minutes</div>
+      </div>
+      <div class="tier">
+        <div class="idx">01</div>
+        <div class="get">Run it on a robot</div>
+        <div class="need">A Bittle X v2, a USB cable, and one firmware flash.</div>
+        <div class="time">an evening</div>
+      </div>
+      <div class="tier">
+        <div class="idx">02</div>
+        <div class="get">Train your own gait</div>
+        <div class="need">The above, plus a decent CPU. Budget ~1.1 h per seed, and run four seeds.</div>
+        <div class="time">+5 hours</div>
+      </div>
+      <div class="tier">
+        <div class="idx">03</div>
+        <div class="get">Measure your own robot</div>
+        <div class="need">The above, plus patience. Produces a plant model fitted to <em>your</em> hardware.</div>
+        <div class="time">+a day</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="robot">
+  <div class="wrap">
+    <div class="head"><h2>What you are working with</h2></div>
+    <p class="sub">Three properties of this robot drive nearly every design decision. Most of what looks
+      strange in the codebase follows from them — and the consequence is that the interesting work is in
+      the plant model, not the algorithm. The RL is ordinary PPO.</p>
+    <div class="constraints">
+      <div class="con">
+        <div class="fig">9.25 Hz<small>whole-body joint read</small></div>
+        <h3>It cannot read its joint positions</h3>
+        <p>The firmware can infer one — detach the servo, turn the signal pin into an input, time a reply
+          pulse — at roughly 20 ms a joint, with the leg limp for the duration. Against a loop that gets
+          20 ms per tick, that is not feedback.</p>
+        <p>So <code>dof_pos</code> and <code>dof_vel</code> are never measured. They are <em>estimated</em>,
+          by replaying the host's own commanded targets through a model of the servo's measured response —
+          and the simulator observes the same estimate rather than its own ground truth.</p>
+      </div>
+      <div class="con">
+        <div class="fig">0<small>raw gyro channels</small></div>
+        <h3>It has no raw angular rate</h3>
+        <p>The firmware never prints angular rates. They are finite-differenced from the fused attitude
+          stream, and that differentiation sets the noise floor the policy has to live with.</p>
+        <p>Everything downstream — observation scaling, the disturbance model, what the reward can
+          reasonably ask for — is drawn against that floor rather than an ideal IMU.</p>
+      </div>
+      <div class="con">
+        <div class="fig">&tau; = 33 ms<small>servo step response</small></div>
+        <h3>Its servos are slow</h3>
+        <p>A naive MuJoCo actuator is much faster than the real thing, and slews well past the measured
+          137 &deg;/s ceiling. Train against that and the gait will not survive contact with hardware.</p>
+        <p>The filter and the actuator have to be fitted <em>together</em>, or the same lag gets counted
+          twice — which is exactly what <code>test_actuator_dynamics.py</code> pins.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="warn">
+      <div class="warn-stripe"></div>
+      <div class="warn-body">
+        <div class="tag">Known & measured</div>
+        <h2>It walks open-loop</h2>
+        <p>Blindfold the policy — replace both IMU channels with a constant &ldquo;upright and still&rdquo; —
+          and it barely notices. It loses 1.1 % of its speed, and 0.2 % on a 4&deg; slope, the condition
+          designed to catch a policy that reads gravity. The loop is closed in the plumbing and not in the
+          policy: the robot is running a learned rhythm more than it is reacting to anything.</p>
+        <p>That is an open problem here, not a solved one. The most likely reason is that the policy almost
+          never falls, so nothing ever selects for recovery.
+          <a href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/training.md">docs/training.md</a>
+          has what was tried and why it did not work &mdash; and
+          <a href="#clock" style="color:var(--oxide-lit);border-bottom-color:rgba(217,80,63,.4)">the section
+          below</a> takes the claim as far as it goes: the whole network is reproduced by 56 numbers and a
+          clock.</p>
+        <div class="term">
+          <div class="term-bar"><span class="tag">check it yourself</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="p">$</span> uv run python tools/blindfold_test.py -e shipped</pre>
+        </div>
+        <div class="deltas">
+          <div class="delta"><div class="n">&minus;1.1 %</div><div class="l">speed, blindfolded</div></div>
+          <div class="delta"><div class="n">&minus;0.2 %</div><div class="l">on a 4&deg; slope</div></div>
+          <div class="delta"><div class="n">12 mm</div><div class="l">rough terrain, no fall</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<section id="clock">
+  <div class="wrap">
+    <div class="head"><h2>The policy is a clock</h2></div>
+    <p class="sub">Twenty-four of the thirty-three observation channels are the policy's own output handed
+      back to it — <code>dof_pos</code> and <code>dof_vel</code> replayed from commands the host already
+      sent, plus <code>last_action</code>. Of the nine that are not, three are the command, and this run
+      pinned two of them: <code>lin_vel_x_range: [0.1, 0.1]</code> and <code>lin_vel_y_range: [0, 0]</code>
+      were constants for all 5000 iterations. That leaves the yaw-rate channel, which the heading
+      controller writes each step from heading error, and the six IMU channels. Freeze those and what
+      remains is close to an <strong>autonomous dynamical system</strong>: the next action is largely a
+      fixed function of past actions. Such a system has three possible fates — a fixed point, a limit
+      cycle, or chaos. A walking gait is a limit cycle, and a limit cycle is a periodic function of one
+      scalar phase. Hence: a clock.</p>
+
+    <div class="numbers">
+      <div class="num"><div class="n">530,323 <em>&rarr; 56</em></div><div class="l">floats to reproduce the gait</div></div>
+      <div class="num"><div class="n">0.0960 <em>/ 0.0961</em></div><div class="l">m/s &mdash; network / clock</div></div>
+      <div class="num"><div class="n">0.8427 Hz</div><div class="l">1.1866 s, 59.33 control steps</div></div>
+      <div class="num"><div class="n">0.64&deg;</div><div class="l">fit residual, wire quantises to 1&deg;</div></div>
+    </div>
+
+    <div class="sheets">
+      <figure class="sheet">
+        <div class="sheet-bar"><span class="fig">Fig 1</span><span>The orbit, and the sensor it does not need</span><span class="src">clock_approximation.ipynb &middot; &sect;2</span></div>
+        <div class="paper"><img src="media/clock_limit_cycle.png" alt="Top: eight commanded joint angles from a cold start, settling into a repeating pattern after about two seconds. Bottom left: a phase portrait showing a closed orbit in the first two principal components. Bottom right: the left-back shoulder command with the IMU intact and blindfolded, tracing the same waveform." width="939" height="646"></div>
+        <figcaption>From a cold start the eight commanded joint angles settle within about two seconds,
+          and the trace closes into a single orbit in the plane of its first two principal components —
+          consecutive cycles then agree to 0.10°, below the 1° the command is quantised to on the wire
+          before it reaches a servo. <b>Bottom right is the measurement the whole reading rests on:</b>
+          freeze both IMU channels to &ldquo;upright and still&rdquo; in the current frame <em>and</em> all
+          twelve history frames, and the shoulder command traces the same waveform — 0.0946 m/s against
+          0.0960.</figcaption>
+      </figure>
+
+      <figure class="sheet">
+        <div class="sheet-bar"><span class="fig">Fig 2</span><span>Fifty-six numbers walk the same</span><span class="src">clock_approximation.ipynb &middot; &sect;5</span></div>
+        <div class="paper"><img src="media/clock_walk.png" alt="Left: forward speed by controller, with Fourier K=3 at 0.0961 m/s matching the network's 0.0960. Right: the network and the open-loop Fourier copy trace the same shoulder waveform." width="1100" height="352"></div>
+        <figcaption>Replace the actor, change nothing else. A K=3 Fourier series — <b>56 floats that read the
+          wall clock and nothing else</b>: no observation, no IMU, no <code>last_action</code> — walks at
+          0.0961 m/s against the network's 0.0960, through the same actuator lag, the same 1° wire
+          quantisation and the same contact model. One sine per joint (24 floats) still walks, just slower
+          and with a wider lateral wobble.</figcaption>
+      </figure>
+    </div>
+
+    <p class="note">On the rough terrain the policy trained against — 12 mm heightfield, 4° slope, pushes,
+      observation noise — three seeds put the two within noise of each other: the network averages 0.0724
+      m/s and falls twice on one seed, the clock averages 0.0786 m/s and does not fall. Three seeds is not
+      a measurement, and that is the point of the open problem above: <strong>there is no evidence the
+      network is using its sensors for anything the clock is missing.</strong></p>
+  </div>
+</section>
+
+<section id="bringup">
+  <div class="wrap">
+    <div class="head"><h2>Bring-up, off the ground first</h2></div>
+    <p class="sub">Stock firmware cannot run this control loop — it ramps every pose command and caps the IMU
+      at 5 Hz. The patches add a <strong>runtime mode that is off at boot</strong>, so a flashed robot still
+      walks, dances and answers the app exactly as before until something asks. Flash with
+      <code>tools/flash_firmware.py</code>: it asks the robot what it is before writing anything, refuses a
+      mismatch, and dumps the whole flash to <code>backups/</code> first, so a bad flash is one command to
+      undo. Then bring it up in stages. Every stage is a gate.</p>
+    <div class="ladder">
+      <div class="rung">
+        <div class="step">a</div>
+        <div>
+          <h3>Probe the link <span class="chip">no motion</span></h3>
+          <p>Does it talk, can it switch modes, and is the IMU stream at 250 Hz once it has?</p>
+          <code><span class="p">$</span> uv run --directory deploy python -m bittle_io --port $PORT --run-id bringup probe</code>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="step">b</div>
+        <div>
+          <h3>Dry run <span class="chip">no serial writes</span></h3>
+          <p>The whole policy path, with nothing reaching the servos.</p>
+          <code><span class="p">$</span> uv run python deploy/control_loop.py --port $PORT --policy $POLICY --dry-run</code>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="step">c</div>
+        <div>
+          <h3>Hold the stance pose <span class="chip air">suspended</span></h3>
+          <p>Robot hanging, legs free. Stance pose only — no policy.</p>
+          <code><span class="p">$</span> uv run python deploy/control_loop.py --port $PORT --policy $POLICY --hold</code>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="step">d</div>
+        <div>
+          <h3>The real policy, short <span class="chip air">suspended</span></h3>
+          <p>Still hanging. Five seconds at the commanded 0.10 m/s.</p>
+          <code><span class="p">$</span> uv run python deploy/control_loop.py --port $PORT --policy $POLICY --command 0.10 0 0 --duration 5</code>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="step">e</div>
+        <div>
+          <h3>On the floor <span class="chip floor">spot it by hand</span></h3>
+          <p>Ten seconds, spotted the first time. The policy was trained at a fixed 0.10 m/s and the export
+            carries that range, so any other <code>--command</code> is clamped and the loop says so on stdout.</p>
+          <code><span class="p">$</span> uv run python deploy/control_loop.py --port $PORT --policy $POLICY --command 0.10 0 0 --duration 10</code>
+        </div>
+      </div>
+    </div>
+    <p class="note"><strong>The plant is the hardware it was fitted to.</strong> The measured plant model,
+      the fitted servo response and the shipped policy all come from a Bittle X v2 with alloy-geared servos.
+      Lighter plastic-geared servos and earlier revisions have their own torque and slew behaviour — read a
+      bad gait there as a plant mismatch rather than a bad policy, and refit with
+      <a href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/measuring.md">docs/measuring.md</a>.
+      The prebuilt image on the
+      <a href="https://github.com/mike-grayhat/bittlejuice/releases">releases page</a> is Bittle X / BiBoard
+      V1.0 / Rev D/E only; those are compile-time choices, so a different board needs its own build.</p>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="wrap">
+    <div class="head"><h2>Where things are</h2></div>
+    <p class="sub"><code>deploy/</code> deliberately depends on nothing but numpy and pyserial — no torch, no
+      mujoco — so it runs on limited hardware like a Pi. Copy that one directory to the robot; if you only
+      ever want to <em>run</em> a policy, that is your whole install.</p>
+    <div class="two">
+      <div class="tree">
+<pre><b>sim/</b>            training pipeline: config, plant, PPO entrypoints, export
+<b>configs/</b>        training recipes <i>-- an objective extending a shared base</i>
+<b>deploy/</b>         robot runtime <i>-- numpy + pyserial only</i>
+  <b>bittle_io/</b>    the measured serial layer and characterization suite
+  <b>policy/</b>       exported policies the robot can run
+<b>tools/</b>          diagnostics, one script per question
+<b>tests/</b>          invariants, asserted against sim/config.py
+<b>model/</b>          bittle.xml + meshes
+<b>logs/shipped/</b>   the checkpoint behind the shipped policy
+<b>firmware/</b>       submodule: the OpenCat fork, pinned to the patched branch
+<b>measurements/</b>   hardware captures; reference/ is a full patched session
+<b>docs/</b>           the long-form guides</pre>
+      </div>
+      <div class="docs">
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/firmware.md"><span class="want">Flash the robot</span><span class="file">docs/firmware.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/training.md"><span class="want">Train your own policy</span><span class="file">docs/training.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/measuring.md"><span class="want">Fit the sim to your hardware</span><span class="file">docs/measuring.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/reflashing.md"><span class="want">Re-verify after a firmware change</span><span class="file">docs/reflashing.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/voice.md"><span class="want">Work on the voice module</span><span class="file">docs/voice.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/deploy/README.md"><span class="want">Understand the robot runtime</span><span class="file">deploy/README.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/deploy/bittle_io/README.md"><span class="want">Understand the measurement instrument</span><span class="file">bittle_io/README.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/measurements/README.md"><span class="want">Know which numbers are safe to use</span><span class="file">measurements/README.md</span></a>
+        <a class="doc" href="https://github.com/mike-grayhat/bittlejuice/blob/main/deploy/bittle_io/READING.md"><span class="want">Background on servos, IMUs, system ID</span><span class="file">bittle_io/READING.md</span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="head"><h2>How the sim is kept honest</h2></div>
+    <p class="sub">The tests are not unit tests in the usual sense. They pin the places where sim and hardware
+      can silently disagree, and most of them exist because that disagreement actually happened. Run them
+      before believing anything: <code>uv run pytest</code>.</p>
+    <div class="docs">
+      <div class="doc"><span class="want">The fitted servo response, and that filter + actuator match the measured step response rather than double-counting it</span><span class="file">test_actuator_dynamics.py</span></div>
+      <div class="doc"><span class="want">Sim's <code>dof_pos</code>/<code>dof_vel</code> estimate agrees bit for bit with what the deploy loop computes</span><span class="file">test_servo_observation.py</span></div>
+      <div class="doc"><span class="want">Every reward term still has usable gradient under the disturbances the environment actually applies</span><span class="file">test_reward_support.py</span></div>
+      <div class="doc"><span class="want">Joint index and sign, against Petoi's own table</span><span class="file">test_joint_mapping_vs_opencat.py</span></div>
+      <div class="doc"><span class="want">The observation gets <code>a_t</code> while the plant gets <code>a_{t-k}</code></span><span class="file">test_latency_paths.py</span></div>
+      <div class="doc"><span class="want">The loop refuses firmware that cannot switch into realtime mode, rather than walking badly against a dead IMU</span><span class="file">test_realtime_mode.py</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="cols">
+      <div>
+        <h4>Licence and credit</h4>
+        <p>This repository is MIT licensed. The <code>firmware/</code> submodule is a fork of
+          <a href="https://github.com/PetoiCamp/OpenCatEsp32-Quadruped-Robot">Petoi's OpenCatESP32</a>
+          (MIT, &copy; Rongzhong Li), pinned to a branch carrying the patches described in
+          <a href="https://github.com/mike-grayhat/bittlejuice/blob/main/docs/firmware.md">docs/firmware.md</a>.</p>
+      </div>
+      <div>
+        <h4>Standing on</h4>
+        <p>Terrain curriculum follows Rudin et al.
+          (<a href="https://arxiv.org/abs/2109.11978">arXiv:2109.11978</a>); the mirror-symmetry loss follows
+          Yu et al. (<a href="https://arxiv.org/abs/1801.08093">arXiv:1801.08093</a>). Training uses
+          <a href="https://github.com/leggedrobotics/rsl_rl">rsl_rl</a>.</p>
+      </div>
+    </div>
+    <div class="stamp">
+      <span>BittleJuice &middot; MIT</span>
+      <span>Bittle X v2 &middot; BiBoard V1.0 Rev D/E</span>
+      <span><a href="https://github.com/mike-grayhat/bittlejuice">github.com/mike-grayhat/bittlejuice</a></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll(".copy").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    var pre = btn.closest(".term").querySelector("pre");
+    var text = pre.innerText.split("\n").map(function(l){
+      return l.replace(/^\$\s?/, "");
+    }).join("\n").trim();
+    var done = function(){
+      btn.textContent = "Copied";
+      btn.dataset.done = "1";
+      setTimeout(function(){ btn.textContent = "Copy"; btn.dataset.done = ""; }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function(){ btn.textContent = "Press ⌘C"; });
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { btn.textContent = "Press ⌘C"; }
+      document.body.removeChild(ta);
+    }
+  });
+});
+</script>
+</body>
+</html>
